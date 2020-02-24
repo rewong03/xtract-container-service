@@ -1,0 +1,5 @@
+.idea/**
+blah/**
+*.db
+*.log
+__pycache__/**
