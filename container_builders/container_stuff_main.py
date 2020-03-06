@@ -2,14 +2,15 @@ import os
 import logging
 import docker
 import namegenerator
+import pg_utils
 from spython.main import Client
 from spython.main.parse.parsers import get_parser
 from spython.main.parse.writers import get_writer
-from db_handler import prep_database
 
 
-#TODO: Singularity seems to kill the function if the container fails to build, might
-# need some sort of extra step for logging to log errors
+#TODO: Temporary fix for catching when singularity fails to build a definition file
+# Usually singularity just prints the fail statement thorugh the singularity application
+# instead of through python
 def build_to_singularity(definition_file, container_location):
     """Builds a Singularity definition file at a location of the
     user's choice.
@@ -22,12 +23,15 @@ def build_to_singularity(definition_file, container_location):
     Client.build(build_folder=os.path.dirname(container_location),
                  image=os.path.basename(container_location))
 
-    logging.info("Successfully built %s Singularity container at %s",
-                 os.path.basename(definition_file), container_location)
+    if os.path.exists(container_location):
+        logging.info("Successfully built %s Singularity container at %s",
+                     os.path.basename(definition_file), container_location)
+    else:
+        logging.error("Singularity failed to build %s", os.path.basename(definition_file))
 
 
 #TODO: Docker will require this script to be run with sudo privelages
-# solution: https://askubuntu.com/questions/477551/how-can-i-use-docker-without-sudo
+# Possible solution: https://askubuntu.com/questions/477551/how-can-i-use-docker-without-sudo
 def build_to_docker(dockerfile, image_name):
     """Builds a Docker image from a Dockerfile.
 
@@ -56,13 +60,17 @@ def build_singularity_from_docker(dockerfile, container_location):
     Client.build(build_folder=os.path.dirname(container_location),
                  image=os.path.basename(container_location))
 
-    logging.info("Successfully built %s Singularity container from %s at %s",
-                 os.path.basename(container_location),
-                 os.path.dirname(dockerfile),
-                 container_location)
+    if os.path.exists(container_location):
+        logging.info("Successfully built %s Singularity container from %s at %s",
+                     os.path.basename(container_location),
+                     os.path.dirname(dockerfile),
+                     container_location)
+    else:
+        logging.error("Failed to build Singularity container from %s",
+                      dockerfile)
 
 
-#TODO: Maybe find a better way to name converted Singularity definition files
+#TODO: Find a better way to name converted Singularity definition files
 def convert_definition_file(input_file, def_file_dir, singularity_def_name=None):
     """Converts a Dockerfile to a Singularity definition file or vice versa.
 
@@ -113,10 +121,11 @@ def convert_definition_file(input_file, def_file_dir, singularity_def_name=None)
 if __name__ == "__main__":
     logging.basicConfig(filename='app.log', filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
+    # build_to_singularity("blah.def", "./blah.sif")
     # prep_database("test.db")
     # db = "test.db"
     # build_to_singularity("test.def", "blah/my_test.sif")
-    # build_to_docker("blah/Dockerfile", "tabular")
+    build_to_docker("blah/Dockerfile", "tabular")
     # build_singularity_from_docker('./blah/Dockerfile', './tabby.sif')
     # convert_definition_file("blah/Dockerfile", "blah")
 

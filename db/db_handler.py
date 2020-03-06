@@ -1,5 +1,5 @@
 import logging
-from db_utils import create_connection, create_table, create_table_entry, update_table_entry, select_all_rows, select_by_column
+import db_utils
 
 
 def prep_database(db_file):
@@ -12,7 +12,7 @@ def prep_database(db_file):
     db_file (str): Path to SQLite database.
     """
     try:
-        conn = create_connection(db_file)
+        conn = db_utils.create_connection(db_file)
 
         container_table = """CREATE TABLE IF NOT EXISTS containers (
                                         id text PRIMARY KEY,
@@ -27,7 +27,7 @@ def prep_database(db_file):
                                         dockerfile_location text,
                                         dockerfile_build_time text
                                     ); """
-        create_table(conn, container_table)
+        db_utils.create_table(conn, container_table)
 
         logging.info("Succesfully prepped the database")
 
@@ -40,7 +40,8 @@ if __name__ == "__main__":
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
 
     prep_database("test.db")
-    conn = create_connection("test.db")
+    conn = db_utils.create_connection("test.db")
+    db_utils.create_table_entry(conn, id="5")
 
 
 

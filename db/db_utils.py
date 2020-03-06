@@ -2,6 +2,13 @@ import hashlib
 import logging
 import sqlite3
 
+all_columns = ["id", "singularity_def_upload_time",
+               "singularity_def_hash", "singularity_def_location",
+               "singularity_build_time", "singularity_container_hash",
+               "singularity_container_location", "dockerfile_upload_time",
+               "dockerfile_hash", "dockerfile_location",
+               "dockerfile_build_time"]
+
 
 def create_connection(db_file):
     """Create a database connection to a SQLite database.
@@ -41,12 +48,6 @@ def create_table_entry(conn, **columns):
     for a column is passed then None is defaulted.
     """
     try:
-        all_columns = ["id", "singularity_def_upload_time",
-                       "singularity_def_hash", "singularity_def_location",
-                       "singularity_build_time", "singularity_container_hash",
-                       "singularity_container_location", "dockerfile_upload_time",
-                       "dockerfile_hash", "dockerfile_location",
-                       "dockerfile_build_time"]
         entry = []
 
         for column in all_columns:
@@ -73,22 +74,15 @@ def update_table_entry(conn, id, **columns):
 
     Parameters:
     conn (Connection Obj.): Connection object to db_file.
-    **columns (str): The value to write passed with the name
-    of the column to write to. E.g. id="1234a".
     id (str): ID of the entry to change.
+    **columns (str): The value to write passed with the name
+    of the column to write to. E.g. dockerfile_hash="1234a".
     """
     try:
-        all_columns = {"singularity_def_upload_time",
-                       "singularity_def_hash", "singularity_def_location",
-                       "singularity_build_time", "singularity_container_hash",
-                       "singularity_container_location", "dockerfile_upload_time",
-                       "dockerfile_hash", "dockerfile_location",
-                       "dockerfile_build_time"}
-
         values = list(columns.values())
         columns = list(columns.keys())
 
-        assert set(columns) <= all_columns, "Column does not exist in table"
+        assert set(columns) <= set(all_columns), "Column does not exist in table"
 
         columns = " = ?,".join(columns) + " = ?"
         values.append(id)
@@ -117,12 +111,6 @@ def select_all_rows(conn):
     rows (list (dict)): List of dictionaries containing the
     columns and their values
     """
-    all_columns = ["id", "singularity_def_upload_time",
-                   "singularity_def_hash", "singularity_def_location",
-                   "singularity_build_time", "singularity_container_hash",
-                   "singularity_container_location", "dockerfile_upload_time",
-                   "dockerfile_hash", "dockerfile_location",
-                   "dockerfile_build_time"]
     rows = []
 
     cur = conn.cursor()
@@ -141,19 +129,13 @@ def select_by_column(conn, **columns):
 
     Parameters:
     conn (Connection Obj.): Connection object to db_file.
-    columns (list (str)): Names of columns to search.
-    values (list (str)): Values to search for in columns.
+    **columns (str): The value to search passed with the value
+    to search for. E.g. dockerfile_hash="1234a".
 
     Return:
     rows (list(dict)): List of rows that match the values.
     """
     try:
-        all_columns = ["id", "singularity_def_upload_time",
-                       "singularity_def_hash", "singularity_def_location",
-                       "singularity_build_time", "singularity_container_hash",
-                       "singularity_container_location", "dockerfile_upload_time",
-                       "dockerfile_hash", "dockerfile_location",
-                       "dockerfile_build_time"]
 
         values = list(columns.values())
         columns = list(columns.keys())
@@ -186,6 +168,7 @@ def file_hasher(file_path):
     file_path (str): Path of file to hash.
 
     Returns:
+    (str): Hexademical hash of the file from file_path.
     """
     block_size = 65536
     hasher = hashlib.sha256()
