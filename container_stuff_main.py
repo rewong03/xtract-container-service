@@ -1,11 +1,15 @@
+import datetime
 import os
 import logging
+import uuid
 import docker
 import namegenerator
-import pg_utils
+from io import BytesIO
 from spython.main import Client
 from spython.main.parse.parsers import get_parser
 from spython.main.parse.writers import get_writer
+from pg_utils import *
+
 
 
 #TODO: Temporary fix for catching when singularity fails to build a definition file
@@ -32,17 +36,68 @@ def build_to_singularity(definition_file, container_location):
 
 #TODO: Docker will require this script to be run with sudo privelages
 # Possible solution: https://askubuntu.com/questions/477551/how-can-i-use-docker-without-sudo
-def build_to_docker(dockerfile, image_name):
+def build_to_docker(container_id, image_name):
     """Builds a Docker image from a Dockerfile.
 
     Parameters:
-    dockerfile (str): Path to Dockerfile to build image from.
+    container_id (str): id of entry in container table to build from.
     image_name (str): Name to tag the final image with.
     """
     try:
+        container_entry = select_by_column(create_connection(), "container",
+                                           container_id=container_id, recipe_type="docker")
+
+        if len(container_entry) > 0:
+            container_entry = container_entry[0]
+        else:
+            raise ValueError("No valid Dockerfile found")
+
+        fileobj = BytesIO(pickle.loads(container_entry["recipe"]))
+
         docker_client = docker.from_env()
-        docker_client.images.build(path=os.path.dirname(dockerfile),
-                                   tag=image_name)
+
+        build_entry = select_by_column(create_connection(), "build",
+                                       container_id=container_id)
+        if len(build_entry) > 0:
+            build_entry = build_entry[0]
+            build_entry["build_status"] = "building"
+            update_table_entry(create_connection(), "build",
+                               build_entry["build_id"], **build_entry)
+        else:
+            build_entry = build_schema
+            build_entry["build_id"] = uuid.uuid4()
+            build_entry["container_id"] = container_id
+            build_entry["container_type"] = "docker"
+            build_entry["build_location"] = "daemon"
+            build_entry["build_status"] = "building"
+            create_table_entry(create_connection(), "build",
+                               **build_entry)
+
+        try:
+            docker_client.images.build(fileobj=fileobj, tag=image_name)
+            build_time = datetime.datetime.now()
+
+            if build_entry["creation_time"]:
+                build_entry["last_built"] = build_entry["creation_time"]
+            else:
+                build_entry["last_built"] = build_time
+            build_entry["build_status"] = "successful"
+            build_entry["creation_time"] = build_time
+            build_entry["tag"] = image_name
+            for image in docker_client.df()["Images"]:
+                if image_name in image["RepoTags"][0]:
+                    build_entry["container_size"] = image["Size"]
+                    break
+
+            update_table_entry(create_connection(), "build",
+                               build_entry["build_id"], **build_entry)
+        except Exception as e:
+            build_entry["build_status"] = "failed"
+            update_table_entry(create_connection(), "build",
+                               build_entry["build_id"], **build_entry)
+
+            raise e
+
         logging.info("Successfully built %s Docker image", image_name)
     except Exception as e:
         logging.error("Exception", exc_info=True)
@@ -125,7 +180,7 @@ if __name__ == "__main__":
     # prep_database("test.db")
     # db = "test.db"
     # build_to_singularity("test.def", "blah/my_test.sif")
-    build_to_docker("blah/Dockerfile", "tabular")
+    build_to_docker("df174d0d-704d-4cd3-9f64-8e4b7a3288da", "reeee")
     # build_singularity_from_docker('./blah/Dockerfile', './tabby.sif')
     # convert_definition_file("blah/Dockerfile", "blah")
 

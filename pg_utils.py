@@ -1,5 +1,6 @@
 import logging
 import uuid
+import pickle
 import psycopg2
 import psycopg2.extras
 from configparser import ConfigParser
@@ -9,17 +10,21 @@ CONTAINER_TABLE = {"container_id": "UUID PRIMARY KEY",
                    "recipe_type": "TEXT", "container_name": "TEXT",
                    "container_version": "INT", "pre_containers": "TEXT []",
                    "post_containers": "TEXT []", "replaces_container": "TEXT []",
-                   "recipe": "BYTEA", "recipe_location": "TEXT"}
+                   "recipe": "BYTEA"}
 
 BUILD_TABLE = {"build_id": "UUID PRIMARY KEY",
                "container_id": "UUID REFERENCES container(container_id)",
-               "creation_time": "TIMESTAMP", "last_edited": "TIMESTAMP",
+               "creation_time": "TIMESTAMP", "last_built": "TIMESTAMP",
                "container_type": "TEXT", "container_size": "INT",
                "build_status": "TEXT", "container_owner": "TEXT",
-               "build_location": "TEXT"}
+               "build_location": "TEXT", "tag": "TEXT"}
+
+build_schema = dict(zip(BUILD_TABLE.keys(), [None] * len(BUILD_TABLE)))
+container_schema = dict(zip(CONTAINER_TABLE.keys(), [None] * len(CONTAINER_TABLE)))
 
 
-def config(config_file='/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/database.ini', section='postgresql'):
+def config(config_file='/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/database.ini',
+           section='postgresql'):
     """Reads PosrgreSQL credentials from a .ini file.
 
     Parameters:
@@ -60,6 +65,7 @@ def create_connection(config_file='/Users/ryan/Documents/CS/CDAC/singularity-vm/
         logging.info("Connection to database succeeded")
 
         return conn
+
     except Exception as e:
         logging.error("Failed to connect to database")
 
@@ -92,6 +98,7 @@ def prep_database(conn):
         conn.commit()
 
         logging.info("Succesfully created tables")
+
     except Exception as e:
         logging.error("Exception", exc_info=True)
 
@@ -134,7 +141,8 @@ def create_table_entry(conn, table_name, **columns):
         cur = conn.cursor()
         cur.execute(statement, entry)
         conn.commit()
-        logging.info("Successfully created entry to database")
+        logging.info("Successfully created entry to {} table".format(table_name))
+
     except Exception as e:
         logging.error("Exception", exc_info=True)
 
@@ -148,7 +156,7 @@ def update_table_entry(conn, table_name, id, **columns):
     either "container" or "build".
     id (str): ID of the entry to change.
     **columns (str): The value to write passed with the name
-    of the column to write to. E.g. dockerfile_hash="1234a".
+    of the column to write to. E.g. recipe="1234a".
     """
     try:
         assert table_name in ["container", "build"], "Not a valid table"
@@ -169,7 +177,6 @@ def update_table_entry(conn, table_name, id, **columns):
         statement = """UPDATE {}
                     SET {}
                     WHERE {}_id = %s""".format(table_name, columns, table_name)
-        print(statement)
         cur = conn.cursor()
         cur.execute(statement, tuple(values))
         conn.commit()
@@ -184,6 +191,8 @@ def select_all_rows(conn, table_name):
 
     Parameters:
     conn (Connection Obj.): Connection object to db_file.
+    table_name (str): Name of table to create an entry to. Currently
+    either "container" or "build".
 
     Return:
     rows (list (dict)): List of dictionaries containing the
@@ -209,13 +218,56 @@ def select_all_rows(conn, table_name):
     return rows
 
 
+def search_array(conn, table_name, array, value):
+    """Searches arrays for a value.
+
+    Parameters:
+    conn (Connection Obj.): Connection object to db_file.
+    table_name (str): Name of table to create an entry to. Currently
+    either "container" or "build".
+    array (str): Name of array column to search.
+    value: Value inside of array to search for.
+
+    Return:
+    rows (list(dict)): List of rows that match the values.
+    """
+    try:
+        assert table_name in ["container", "build"], "Not a valid table"
+
+        if table_name == "container":
+            table = CONTAINER_TABLE
+        elif table_name == "build":
+            table = BUILD_TABLE
+
+        assert array in table, "Array does not exist"
+
+        rows = []
+
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM {} WHERE '{}'=ANY({})".format(table_name, value, array))
+
+        results = cur.fetchall()
+
+        for result in results:
+            rows.append(dict(zip(table, result)))
+
+        logging.info("Successfully queried {} array".format(array))
+
+        return rows
+
+    except Exception as e:
+        logging.error("Exception", exc_info=True)
+
+
 def select_by_column(conn, table_name, **columns):
     """Searches containers table by values for columns.
 
     Parameters:
     conn (Connection Obj.): Connection object to db_file.
+    table_name (str): Name of table to create an entry to. Currently
+    either "container" or "build".
     **columns (str): The value to search passed with the value
-    to search for. E.g. dockerfile_hash="1234a".
+    to search for. E.g. recipe="1234a".
 
     Return:
     rows (list(dict)): List of rows that match the values.
@@ -255,33 +307,22 @@ def select_by_column(conn, table_name, **columns):
 
 
 if __name__ == "__main__":
-    # with open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/aws_rds.txt") as f:
-    #     credentials = list(map(lambda x: x.strip(), f.readlines()))
-    #     username = credentials[1]
-    #     password = credentials[0]
-    #     host = credentials[2]
-
-
-    conn = create_connection()
-#     prep_database(conn)
-#     create_table_entry(conn, "container",
-#                        container_id=uuid.uuid4(),
-#                        recipe_type="docker",
-#                        pre_containers=["xtract-sampler"],
-#                        post_containers=["xtract-jsonxml", "xtract-tabular"],
-#                        replaces_container=["xtract-images-old"],
-#                        container_name="xtract-images",
-#                        container_version=1,
-#                        recipe="""FROM python:latest
-#
-# RUN git clone https://github.com/xtracthub/xtract-images
-# RUN cd xtract-images && pip install -r requirements.txt
-#
-# WORKDIR /xtract-images
-#
-# ENTRYPOINT ["python", "xtract_images_main.py"]""")
-#     print(select_by_column(conn, "container",
-#                            recipe_type="singularity"))
-
+    logging.basicConfig(filename='/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/app.log', filemode='w',
+                        level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
+    # conn = create_connection()
+    # prep_database(conn)
+    #
+    # recipe = pickle.dumps(open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/Dockerfile", 'rb').read())
+    # create_table_entry(conn, "container",
+    #                    container_id=uuid.uuid4(),
+    #                    recipe_type="docker",
+    #                    pre_containers=["xtract-sampler"],
+    #                    post_containers=["xtract-jsonxml", "xtract-tabular"],
+    #                    replaces_container=["xtract-images-old"],
+    #                    container_name="xtract-images",
+    #                    container_version=1,
+    #                    recipe=recipe)
+    # print(select_by_column(conn, "container",
+    #                        recipe_type="xtract-jsonxml"))
 
     print("Success!")
