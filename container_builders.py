@@ -1,7 +1,9 @@
 import datetime
 import os
 import logging
+import shutil
 import uuid
+import boto3
 import docker
 import namegenerator
 from io import BytesIO
@@ -44,20 +46,18 @@ def build_to_docker(container_id, image_name):
     image_name (str): Name to tag the final image with.
     """
     try:
-        container_entry = select_by_column(create_connection(), "container",
-                                           container_id=container_id, recipe_type="docker")
-
-        if len(container_entry) > 0:
-            container_entry = container_entry[0]
-        else:
-            raise ValueError("No valid Dockerfile found")
-
-        fileobj = BytesIO(pickle.loads(container_entry["recipe"]))
+        bucket = boto3.resource('s3').Bucket("xtract-container-service")
+        for object in bucket.objects.filter(Prefix=container_id):
+            print(object)
+            if not os.path.exists("./" + os.path.dirname(object.key)):
+                os.makedirs("./" + os.path.dirname(object.key))
+            bucket.download_file(object.key, "./" + object.key)
 
         docker_client = docker.from_env()
 
         build_entry = select_by_column(create_connection(), "build",
-                                       container_id=container_id)
+                                       container_id=container_id,
+                                       container_type="docker")
         if len(build_entry) > 0:
             build_entry = build_entry[0]
             build_entry["build_status"] = "building"
@@ -74,7 +74,8 @@ def build_to_docker(container_id, image_name):
                                **build_entry)
 
         try:
-            docker_client.images.build(fileobj=fileobj, tag=image_name)
+            docker_client.images.build(path="./{}".format(container_id),
+                                       tag=image_name)
             build_time = datetime.datetime.now()
 
             if build_entry["creation_time"]:
@@ -97,6 +98,8 @@ def build_to_docker(container_id, image_name):
                                build_entry["build_id"], **build_entry)
 
             raise e
+        finally:
+            shutil.rmtree("./" + container_id)
 
         logging.info("Successfully built %s Docker image", image_name)
     except Exception as e:
@@ -111,18 +114,21 @@ def build_singularity_from_docker(dockerfile, container_location):
     dockerfile (str): Path to Dockerfile to build image from.
     container_location (str): Path to location to build the container.
     """
-    Client.load(os.path.dirname(dockerfile))
-    Client.build(build_folder=os.path.dirname(container_location),
-                 image=os.path.basename(container_location))
-
-    if os.path.exists(container_location):
-        logging.info("Successfully built %s Singularity container from %s at %s",
-                     os.path.basename(container_location),
-                     os.path.dirname(dockerfile),
-                     container_location)
-    else:
-        logging.error("Failed to build Singularity container from %s",
-                      dockerfile)
+    import boto3
+    s3 = boto3.resource('s3')
+    print(s3.Object('xtract-container-service', 'my_test/dockerfile').get()['Body'].read())
+    # Client.load(dockerfile)
+    # Client.build(build_folder=os.path.dirname(container_location),
+    #              image=os.path.basename(container_location))
+    #
+    # if os.path.exists(container_location):
+    #     logging.info("Successfully built %s Singularity container from %s at %s",
+    #                  os.path.basename(container_location),
+    #                  os.path.dirname(dockerfile),
+    #                  container_location)
+    # else:
+    #     logging.error("Failed to build Singularity container from %s",
+    #                   dockerfile)
 
 
 #TODO: Find a better way to name converted Singularity definition files
@@ -180,7 +186,7 @@ if __name__ == "__main__":
     # prep_database("test.db")
     # db = "test.db"
     # build_to_singularity("test.def", "blah/my_test.sif")
-    build_to_docker("df174d0d-704d-4cd3-9f64-8e4b7a3288da", "reeee")
-    # build_singularity_from_docker('./blah/Dockerfile', './tabby.sif')
+    # build_to_docker("d782ffbf-84de-447f-91ce-b29c6142ba76", "bad-image")
+    # build_singularity_from_docker('/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/Dockerfile', './tabby.sif')
     # convert_definition_file("blah/Dockerfile", "blah")
 

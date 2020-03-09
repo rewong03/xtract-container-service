@@ -1,4 +1,5 @@
 docker
+boto3
 psycopg2
 spython
 namegenerator

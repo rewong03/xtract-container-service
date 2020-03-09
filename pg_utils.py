@@ -10,7 +10,7 @@ CONTAINER_TABLE = {"container_id": "UUID PRIMARY KEY",
                    "recipe_type": "TEXT", "container_name": "TEXT",
                    "container_version": "INT", "pre_containers": "TEXT []",
                    "post_containers": "TEXT []", "replaces_container": "TEXT []",
-                   "recipe": "BYTEA"}
+                   "s3_location": "TEXT"}
 
 BUILD_TABLE = {"build_id": "UUID PRIMARY KEY",
                "container_id": "UUID REFERENCES container(container_id)",
@@ -177,6 +177,7 @@ def update_table_entry(conn, table_name, id, **columns):
         statement = """UPDATE {}
                     SET {}
                     WHERE {}_id = %s""".format(table_name, columns, table_name)
+        psycopg2.extras.register_uuid()
         cur = conn.cursor()
         cur.execute(statement, tuple(values))
         conn.commit()
@@ -309,20 +310,22 @@ def select_by_column(conn, table_name, **columns):
 if __name__ == "__main__":
     logging.basicConfig(filename='/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/app.log', filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
-    # conn = create_connection()
+    conn = create_connection()
     # prep_database(conn)
     #
-    # recipe = pickle.dumps(open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/Dockerfile", 'rb').read())
+    # id = uuid.uuid4()
     # create_table_entry(conn, "container",
-    #                    container_id=uuid.uuid4(),
+    #                    container_id=id,
     #                    recipe_type="docker",
-    #                    pre_containers=["xtract-sampler"],
-    #                    post_containers=["xtract-jsonxml", "xtract-tabular"],
-    #                    replaces_container=["xtract-images-old"],
-    #                    container_name="xtract-images",
+    #                    container_name="bad-image",
     #                    container_version=1,
-    #                    recipe=recipe)
-    # print(select_by_column(conn, "container",
-    #                        recipe_type="xtract-jsonxml"))
+    #                    s3_location=str(id) + "/" + "Dockerfile")
+    # import boto3
+    #
+    # s3 = boto3.client('s3')
+    # with open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/container_builders/blah/Dockerfile", 'rb') as f:
+    #     s3.upload_fileobj(f, 'xtract-container-service',
+    #                       'd782ffbf-84de-447f-91ce-b29c6142ba76/dockerfile')
+
 
     print("Success!")

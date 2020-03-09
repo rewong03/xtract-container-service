@@ -6,4 +6,5 @@
 *.def
 *.sif
 *.ini
+*.pyc
 Dockerfile
