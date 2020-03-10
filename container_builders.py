@@ -6,55 +6,108 @@ import uuid
 import boto3
 import docker
 import namegenerator
-from io import BytesIO
 from spython.main import Client
 from spython.main.parse.parsers import get_parser
 from spython.main.parse.writers import get_writer
 from pg_utils import *
 
 
+def pull_s3_dir(container_id):
+    """Pulls a directory of files from a container_id folder in our
+    S3 bucket.
+
+    Parameter:
+    container_id (str): Name of id to pull files from.
+    """
+    bucket = boto3.resource('s3').Bucket("xtract-container-service")
+    for object in bucket.objects.filter(Prefix=container_id):
+        if not os.path.exists("./" + os.path.dirname(object.key)):
+            os.makedirs("./" + os.path.dirname(object.key))
+        bucket.download_file(object.key, "./" + object.key)
+
 
 #TODO: Temporary fix for catching when singularity fails to build a definition file
 # Usually singularity just prints the fail statement thorugh the singularity application
 # instead of through python
-def build_to_singularity(definition_file, container_location):
-    """Builds a Singularity definition file at a location of the
-    user's choice.
+def build_to_singularity(container_id, container_location):
+    """Builds a Singularity container from a container db entry.
 
     Parameters:
     definition_file (str): Path to the file to be built.
     container_location (str): Path to location to build the container.
     """
-    Client.load(definition_file)
-    Client.build(build_folder=os.path.dirname(container_location),
-                 image=os.path.basename(container_location))
+    try:
+        assert len(select_by_column(create_connection(), "container",
+                                    container_id=container_id,
+                                    recipe_type="singularity")) > 0, "Incorrect recipe type"
 
-    if os.path.exists(container_location):
-        logging.info("Successfully built %s Singularity container at %s",
-                     os.path.basename(definition_file), container_location)
-    else:
-        logging.error("Singularity failed to build %s", os.path.basename(definition_file))
+        pull_s3_dir(container_id)
+        Client.load("./" + container_id)
+        build_entry = select_by_column(create_connection(), "build",
+                                       container_id=container_id,
+                                       container_type="singularity")
+        if len(build_entry) > 0:
+            build_entry = build_entry[0]
+            build_entry["build_status"] = "building"
+            update_table_entry(create_connection(), "build",
+                               build_entry["build_id"], **build_entry)
+        else:
+            build_entry = build_schema
+            build_entry["build_id"] = uuid.uuid4()
+            build_entry["container_id"] = container_id
+            build_entry["container_type"] = "singularity"
+            build_entry["build_location"] = container_location
+            build_entry["build_status"] = "building"
+            create_table_entry(create_connection(), "build",
+                               **build_entry)
+
+        Client.build(build_folder=os.path.dirname(container_location),
+                     image=os.path.basename(container_location))
+
+        if os.path.exists(container_location):
+            build_time = datetime.datetime.now()
+
+            if build_entry["creation_time"]:
+                build_entry["last_built"] = build_entry["creation_time"]
+            else:
+                build_entry["last_built"] = build_time
+            build_entry["build_status"] = "successful"
+            build_entry["creation_time"] = build_time
+            build_entry["container_name"] = os.path.basename(container_location)
+            build_entry["container_size"] = os.path.getsize(container_location)
+
+            update_table_entry(create_connection(), "build",
+                               build_entry["build_id"], **build_entry)
+            shutil.rmtree("./" + container_id)
+            logging.info("Successfully built %s Singularity container at %s",
+                         os.path.basename(container_id), container_location)
+
+        else:
+            build_entry["build_status"] = "failed"
+            update_table_entry(create_connection(), "build",
+                               build_entry["build_id"], **build_entry)
+            shutil.rmtree("./" + container_id)
+            raise ValueError("Singularity failed to build {}".format(os.path.basename(container_id)))
+    except Exception as e:
+        logging.error("Exception", exc_info=True)
 
 
 #TODO: Docker will require this script to be run with sudo privelages
 # Possible solution: https://askubuntu.com/questions/477551/how-can-i-use-docker-without-sudo
 def build_to_docker(container_id, image_name):
-    """Builds a Docker image from a Dockerfile.
+    """Builds a Docker image from a container db entry.
 
     Parameters:
     container_id (str): id of entry in container table to build from.
     image_name (str): Name to tag the final image with.
     """
     try:
-        bucket = boto3.resource('s3').Bucket("xtract-container-service")
-        for object in bucket.objects.filter(Prefix=container_id):
-            print(object)
-            if not os.path.exists("./" + os.path.dirname(object.key)):
-                os.makedirs("./" + os.path.dirname(object.key))
-            bucket.download_file(object.key, "./" + object.key)
+        assert len(select_by_column(create_connection(), "container",
+                                    container_id=container_id,
+                                    recipe_type="docker")) > 0, "Incorrect recipe type"
 
+        pull_s3_dir(container_id)
         docker_client = docker.from_env()
-
         build_entry = select_by_column(create_connection(), "build",
                                        container_id=container_id,
                                        container_type="docker")
@@ -84,7 +137,7 @@ def build_to_docker(container_id, image_name):
                 build_entry["last_built"] = build_time
             build_entry["build_status"] = "successful"
             build_entry["creation_time"] = build_time
-            build_entry["tag"] = image_name
+            build_entry["container_name"] = image_name
             for image in docker_client.df()["Images"]:
                 if image_name in image["RepoTags"][0]:
                     build_entry["container_size"] = image["Size"]
@@ -106,29 +159,28 @@ def build_to_docker(container_id, image_name):
         logging.error("Exception", exc_info=True)
 
 
-def build_singularity_from_docker(dockerfile, container_location):
+def build_singularity_from_docker(container_id, container_location):
     """Builds a Singularity definition file at a location of the
         user's choice.
 
     Parameters:
-    dockerfile (str): Path to Dockerfile to build image from.
+    container_id (str): id of entry in container table to build from.
     container_location (str): Path to location to build the container.
     """
-    import boto3
-    s3 = boto3.resource('s3')
-    print(s3.Object('xtract-container-service', 'my_test/dockerfile').get()['Body'].read())
-    # Client.load(dockerfile)
-    # Client.build(build_folder=os.path.dirname(container_location),
-    #              image=os.path.basename(container_location))
-    #
-    # if os.path.exists(container_location):
-    #     logging.info("Successfully built %s Singularity container from %s at %s",
-    #                  os.path.basename(container_location),
-    #                  os.path.dirname(dockerfile),
-    #                  container_location)
-    # else:
-    #     logging.error("Failed to build Singularity container from %s",
-    #                   dockerfile)
+    pull_s3_dir(container_id)
+
+    Client.load("./" + container_id)
+    Client.build(build_folder=os.path.dirname(container_location),
+                 image=os.path.basename(container_location))
+
+    if os.path.exists(container_location):
+        logging.info("Successfully built %s Singularity container from %s at %s",
+                     os.path.basename(container_location),
+                     os.path.dirname(container_id),
+                     container_location)
+    else:
+        logging.error("Failed to build Singularity container from %s",
+                      container_id)
 
 
 #TODO: Find a better way to name converted Singularity definition files
@@ -182,7 +234,7 @@ def convert_definition_file(input_file, def_file_dir, singularity_def_name=None)
 if __name__ == "__main__":
     logging.basicConfig(filename='app.log', filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
-    # build_to_singularity("blah.def", "./blah.sif")
+    build_to_singularity("be1f0f85-4cb0-4547-9de3-6615a07877f3", "./blah.sif")
     # prep_database("test.db")
     # db = "test.db"
     # build_to_singularity("test.def", "blah/my_test.sif")
