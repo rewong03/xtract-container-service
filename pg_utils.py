@@ -23,7 +23,7 @@ build_schema = dict(zip(BUILD_TABLE.keys(), [None] * len(BUILD_TABLE)))
 container_schema = dict(zip(CONTAINER_TABLE.keys(), [None] * len(CONTAINER_TABLE)))
 
 
-def config(config_file='database.ini',
+def config(config_file='/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/database.ini',
            section='postgresql'):
     """Reads PosrgreSQL credentials from a .ini file.
 
@@ -51,7 +51,7 @@ def config(config_file='database.ini',
     return credentials
 
 
-def create_connection(config_file='database.ini'):
+def create_connection(config_file='/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/database.ini'):
     """Creates a connection object to a PostgreSQL database.
 
     Parameters:
@@ -308,24 +308,24 @@ def select_by_column(conn, table_name, **columns):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(filename='app.log', filemode='w',
+    logging.basicConfig(filename='/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/app.log', filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
     conn = create_connection()
-    # # prep_database(conn)
-    # #
-    # id = uuid.uuid4()
-    # create_table_entry(conn, "container",
-    #                    container_id=id,
-    #                    recipe_type="singularity",
-    #                    container_name="good-image",
-    #                    container_version=1,
-    #                    s3_location=str(id))
-    # import boto3
+    # prep_database(conn)
     #
-    # s3 = boto3.client('s3')
-    # with open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/good.def", 'rb') as f:
-    #     s3.upload_fileobj(f, 'xtract-container-service',
-    #                       '{}/good-image.def'.format(id))
+    id = uuid.uuid4()
+    create_table_entry(conn, "container",
+                       container_id=id,
+                       recipe_type="docker",
+                       container_name="good-docker",
+                       container_version=1,
+                       s3_location=str(id))
+    import boto3
+
+    s3 = boto3.client('s3')
+    with open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/Dockerfile", 'rb') as f:
+        s3.upload_fileobj(f, 'xtract-container-service',
+                          '{}/Dockerfile'.format(id))
 
 
     print("Success!")

@@ -1,6 +1,7 @@
 import datetime
 import os
 import logging
+import subprocess
 import shutil
 import uuid
 import boto3
@@ -30,16 +31,16 @@ def pull_s3_dir(container_id):
 # Usually singularity just prints the fail statement thorugh the singularity application
 # instead of through python
 def build_to_singularity(container_id, container_location):
-    """Builds a Singularity container from a container db entry.
+    """Builds a Singularity container from a Dockerfile or Singularity file
+    within the container db.
 
     Parameters:
-    definition_file (str): Path to the file to be built.
+    container_id (str): ID of container db entry to build singularity container from.
     container_location (str): Path to location to build the container.
     """
     try:
         assert len(select_by_column(create_connection(), "container",
-                                    container_id=container_id,
-                                    recipe_type="singularity")) > 0, "Incorrect recipe type"
+                                           container_id=container_id)) > 0, "Recipe doesn't exist"
 
         pull_s3_dir(container_id)
         Client.load("./" + container_id)
@@ -98,13 +99,13 @@ def build_to_docker(container_id, image_name):
     """Builds a Docker image from a container db entry.
 
     Parameters:
-    container_id (str): id of entry in container table to build from.
+    container_id (str): ID of container db entry to build docker container from.
     image_name (str): Name to tag the final image with.
     """
     try:
         assert len(select_by_column(create_connection(), "container",
                                     container_id=container_id,
-                                    recipe_type="docker")) > 0, "Incorrect recipe type"
+                                    recipe_type="docker")) > 0, "Recipe doesn't exit"
 
         pull_s3_dir(container_id)
         docker_client = docker.from_env()
@@ -159,54 +160,52 @@ def build_to_docker(container_id, image_name):
         logging.error("Exception", exc_info=True)
 
 
-def build_singularity_from_docker(container_id, container_location):
-    """Builds a Singularity definition file at a location of the
-        user's choice.
-
-    Parameters:
-    container_id (str): id of entry in container table to build from.
-    container_location (str): Path to location to build the container.
-    """
-    pull_s3_dir(container_id)
-
-    Client.load("./" + container_id)
-    Client.build(build_folder=os.path.dirname(container_location),
-                 image=os.path.basename(container_location))
-
-    if os.path.exists(container_location):
-        logging.info("Successfully built %s Singularity container from %s at %s",
-                     os.path.basename(container_location),
-                     os.path.dirname(container_id),
-                     container_location)
-    else:
-        logging.error("Failed to build Singularity container from %s",
-                      container_id)
-
-
 #TODO: Find a better way to name converted Singularity definition files
-def convert_definition_file(input_file, def_file_dir, singularity_def_name=None):
+def convert_definition_file(container_id, singularity_def_name=None):
     """Converts a Dockerfile to a Singularity definition file or vice versa.
 
     Parameters:
-    input_file (str): Path to definition file to convert.
-    def_file_dir (str): Path to directory to place the converted definition file.
+    container_id (str): ID of container db entry to convert.
     singularity_def_name (str): Name to give to converted .def file if converting
     from Dockerfile to Singularity definition file.
     """
-    if input_file.endswith(".def"):
-        from_format = "Singularity"
-        to_format = "docker"
-    elif os.path.basename(input_file) == "Dockerfile":
-        from_format = "docker"
-        to_format = "Singularity"
-    else:
-        logging.error("Incorrect file types")
-        return
-
     try:
+        container_entry = select_by_column(create_connection(), "container",
+                                           container_id=container_id)
+
+        if len(container_entry) > 0:
+            container_entry = container_entry[0]
+        else:
+            raise ValueError("Recipe doesn't exist")
+
+        new_container_id = uuid.uuid4()
+        new_path = "./" + str(new_container_id)
+        os.mkdir(new_path)
+        #TODO: S3's file structure is flat rather than nested so it makes it hard to download files using
+        # python but in the future we should download directories using boto3
+        subprocess.call("aws s3 cp --recursive s3://xtract-container-service/{} {}".format(container_id,
+                                                                                           new_path),
+                        shell=True)
+
+        for file in os.listdir(new_path):
+            if file == "Dockerfile" or file.endswith(".def"):
+                input_file = file
+                break
+            else:
+                input_file = None
+
+        assert input_file, "Definition file not found"
+
+        if input_file.endswith(".def"):
+            from_format = "Singularity"
+            to_format = "docker"
+        else:
+            from_format = "docker"
+            to_format = "Singularity"
+
         file_parser = get_parser(from_format)
         file_writer = get_writer(to_format)
-        parser = file_parser(input_file)
+        parser = file_parser(os.path.join(new_path, input_file))
         writer = file_writer(parser.recipe)
         result = writer.convert()
 
@@ -214,12 +213,27 @@ def convert_definition_file(input_file, def_file_dir, singularity_def_name=None)
             if singularity_def_name is None:
                 singularity_def_name = namegenerator.gen() + ".sif"
 
-            file_path = os.path.join(def_file_dir, singularity_def_name)
+            file_path = os.path.join(str(new_container_id), singularity_def_name)
         else:
-            file_path = os.path.join(def_file_dir, "Dockerfile")
+            file_path = os.path.join(str(new_container_id), "Dockerfile")
 
         with open(file_path, 'w') as f:
             f.write(result)
+
+        os.remove(os.path.join(new_path, input_file))
+
+        db_entry = container_schema
+        db_entry["container_id"] = new_container_id
+        db_entry["recipe_type"] = to_format.lower()
+        db_entry["container_name"] = container_entry["container_name"]
+        db_entry["container_version"] = 1
+        db_entry["pre_containers"] = container_entry["pre_containers"]
+        db_entry["post_containers"] = container_entry["post_containers"]
+        db_entry["replaces_container"] = container_entry["replaces_container"]
+        db_entry["s3_location"] = str(new_container_id)
+        create_table_entry(create_connection(), "container",
+                           **db_entry)
+
 
         logging.info("Successfully converted %s %s definition file to %s %s definition file",
                      os.path.basename(input_file),
@@ -229,12 +243,16 @@ def convert_definition_file(input_file, def_file_dir, singularity_def_name=None)
 
     except Exception as e:
         logging.error("Exception", exc_info=True)
+    finally:
+        shutil.rmtree(new_path)
 
 
 if __name__ == "__main__":
     logging.basicConfig(filename='app.log', filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
-    build_to_singularity("be1f0f85-4cb0-4547-9de3-6615a07877f3", "./blah.sif")
+    # build_to_singularity("662ef5c1-2de7-4071-89c2-552cad75985e", "./test.sif")
+    convert_definition_file("13729cf8-a205-416c-87fc-2421e97a84b9")
+    # pull_s3_dir("662ef5c1-2de7-4071-89c2-552cad75985e")
     # prep_database("test.db")
     # db = "test.db"
     # build_to_singularity("test.def", "blah/my_test.sif")
