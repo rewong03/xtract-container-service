@@ -14,7 +14,7 @@ CONTAINER_TABLE = {"container_id": "UUID PRIMARY KEY",
 
 BUILD_TABLE = {"build_id": "UUID PRIMARY KEY",
                "container_id": "UUID REFERENCES container(container_id)",
-               "creation_time": "TIMESTAMP", "last_built": "TIMESTAMP",
+               "build_time": "TIMESTAMP", "last_built": "TIMESTAMP",
                "container_type": "TEXT", "container_size": "INT",
                "build_status": "TEXT", "container_owner": "TEXT",
                "build_location": "TEXT", "container_name": "TEXT"}
@@ -314,18 +314,18 @@ if __name__ == "__main__":
     # prep_database(conn)
     #
     id = uuid.uuid4()
-    create_table_entry(conn, "container",
-                       container_id=id,
-                       recipe_type="docker",
-                       container_name="good-docker",
-                       container_version=1,
-                       s3_location=str(id))
+    # create_table_entry(conn, "container",
+    #                    container_id=id,
+    #                    recipe_type="docker",
+    #                    container_name="good-docker",
+    #                    container_version=1,
+    #                    s3_location=str(id))
     import boto3
 
     s3 = boto3.client('s3')
     with open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/Dockerfile", 'rb') as f:
-        s3.upload_fileobj(f, 'xtract-container-service',
-                          '{}/Dockerfile'.format(id))
-
+        print(f)
+        # s3.upload_fileobj(f, 'xtract-container-service',
+        #                   '{}/Dockerfile'.format(id))
 
     print("Success!")
