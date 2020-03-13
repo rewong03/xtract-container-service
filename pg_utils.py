@@ -1,6 +1,5 @@
 import logging
 import uuid
-import pickle
 import psycopg2
 import psycopg2.extras
 from configparser import ConfigParser
@@ -23,7 +22,7 @@ build_schema = dict(zip(BUILD_TABLE.keys(), [None] * len(BUILD_TABLE)))
 container_schema = dict(zip(CONTAINER_TABLE.keys(), [None] * len(CONTAINER_TABLE)))
 
 
-def config(config_file='/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/database.ini',
+def config(config_file='database.ini',
            section='postgresql'):
     """Reads PosrgreSQL credentials from a .ini file.
 
@@ -51,7 +50,7 @@ def config(config_file='/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-cont
     return credentials
 
 
-def create_connection(config_file='/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/database.ini'):
+def create_connection(config_file='database.ini'):
     """Creates a connection object to a PostgreSQL database.
 
     Parameters:
@@ -316,15 +315,15 @@ if __name__ == "__main__":
     id = uuid.uuid4()
     create_table_entry(conn, "container",
                        container_id=id,
-                       recipe_type="docker",
-                       container_name="bad-docker",
+                       recipe_type="singularity",
+                       container_name="good-singularity",
                        container_version=1,
                        s3_location=str(id))
     import boto3
 
     s3 = boto3.client('s3')
-    with open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/container_builders/blah/Dockerfile", 'rb') as f:
+    with open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/good.def", 'rb') as f:
         s3.upload_fileobj(f, 'xtract-container-service',
-                          '{}/Dockerfile'.format(id))
+                          '{}/good.def'.format(id))
 
     print("Success!")
