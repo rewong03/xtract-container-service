@@ -1,3 +1,4 @@
+import base64
 import datetime
 import os
 import logging
@@ -85,15 +86,41 @@ def build_to_docker(container_entry, image_name):
         return None
 
 
-def push_to_ecr(docker_image,
-                ecr_link="REDACTED"):
-    docker_image.tag("{}/{}:latest".format(ecr_link,
-                                    docker_image.tags[0]))
-    client = docker.from_env()
-    # docker_image.tag(ecr_link)
-    print("cool")
-    # client.push("{}/{}".format(ecr_link,
-    #                                 docker_image))
+def push_to_ecr(docker_image, build_id, image_name):
+    """Pushes a docker image to an ECR repository.
+
+    Parameters:
+    docker_image (Docker image obj.): Docker image object to push.
+    build_id (str): Build UUID of docker_image.
+    image_name (str): Name of the image of docker_image.
+
+    Return:
+    (str): Response message from docker push or None if it fails.
+    """
+    try:
+        ecr_client = boto3.client("ecr")
+
+        try:
+            ecr_client.describe_repositories(repositoryNames=[build_id])
+        except:
+            ecr_client.create_repository(repositoryName=build_id)
+
+        token = ecr_client.get_authorization_token()
+        username, password = base64.b64decode(token['authorizationData'][0]['authorizationToken']).decode().split(':')
+        registry = token['authorizationData'][0]['proxyEndpoint'][8:] + "/" + build_id
+        docker_client = docker.from_env()
+        docker_client.login(username=username, password=password,
+                            registry=registry)
+        docker_image.tag(registry,
+                         tag=image_name)
+        response = docker_client.images.push(registry)
+        # TODO Find a better way to check if the image was successfully pushed
+        if "sha256" in response:
+            return response
+        else:
+            raise ValueError("Failed to push")
+    except:
+        return None
 
 
 #TODO: Find a better way to name converted Singularity definition files
@@ -190,6 +217,7 @@ def build_container(container_id, to_format, container_name):
     container_id (str): ID of container db entry to build from.
     to_format (str): Format of container to build. Either "singularity"
     or "docker". If "docker", the recipe type must be a Dockerfile.
+    container_name (str): Name to give the container.
     """
     try:
         assert to_format in ["docker", "singularity"], "{} is not a valid container format".format(to_format)
@@ -198,7 +226,7 @@ def build_container(container_id, to_format, container_name):
                                            "container",
                                            container_id=container_id)
 
-        if len(container_entry) == 1:
+        if container_entry is not None and len(container_entry) == 1:
             container_entry = container_entry[0]
         else:
             raise ValueError("No db entry for {}".format(container_id))
@@ -206,7 +234,7 @@ def build_container(container_id, to_format, container_name):
         build_entry = select_by_column(create_connection(), "build",
                                        container_id=container_id,
                                        container_type=to_format)
-        if len(build_entry) == 1:
+        if build_entry is not None and len(build_entry) == 1:
             build_entry = build_entry[0]
             build_entry["build_status"] = "pending"
             update_table_entry(create_connection(), "build",
@@ -231,22 +259,28 @@ def build_container(container_id, to_format, container_name):
         if to_format == "docker":
             docker_image = build_to_docker(container_entry, container_name)
             if docker_image:
-                build_time = datetime.datetime.now()
+                docker_image = docker_image[0]
                 last_built = build_entry["build_time"] if build_entry["build_time"] else None
+                build_time = datetime.datetime.now()
 
-                build_entry["build_status"] = "pushing"
                 update_table_entry(create_connection(), "build",
                                    build_entry["build_id"], **{"build_status": "pushing",
                                                                "build_time": build_time,
-                                                               "last_build": last_built})
-                push_to_ecr(docker_image) #<- will need error catching once ecr stuff is figured out
-                update_table_entry(create_connection(), "build",
-                                   build_entry["build_id"], **{"build_status": "success"})
+                                                               "last_built": last_built})
+                response = push_to_ecr(docker_image, str(build_entry["build_id"]),
+                                       container_name) #<- will need error catching once ecr stuff is figured out
+                if response is not None:
+                    update_table_entry(create_connection(), "build",
+                                       build_entry["build_id"], **{"build_status": "success"})
+                else:
+                    update_table_entry(create_connection(), "build",
+                                       build_entry["build_id"], **{"build_status": "failed"})
+                    raise ValueError("Failed to push")
             else:
-                build_entry["build_status"] = "failed"
                 update_table_entry(create_connection(), "build",
                                    build_entry["build_id"], **{"build_status": "failed"})
                 raise ValueError("Failed to build docker container")
+
         elif to_format == "singularity":
             singularity_image = build_to_singularity(container_entry, container_name)
             if singularity_image:
@@ -271,11 +305,9 @@ def build_container(container_id, to_format, container_name):
                                    build_entry["build_id"], **{"build_status": "failed"})
                 raise ValueError("Failed to build docker container")
 
-
-
-
     except Exception as e:
         logging.error("Exception", exc_info=True)
+
 
 
 
@@ -284,4 +316,4 @@ if __name__ == "__main__":
     logging.basicConfig(filename='app.log', filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
 
-
+    build_container("d4d896bd-01c7-4c7e-9d6f-1925478c30f1", "docker", "r")

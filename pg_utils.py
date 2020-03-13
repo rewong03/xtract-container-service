@@ -314,18 +314,17 @@ if __name__ == "__main__":
     # prep_database(conn)
     #
     id = uuid.uuid4()
-    # create_table_entry(conn, "container",
-    #                    container_id=id,
-    #                    recipe_type="docker",
-    #                    container_name="good-docker",
-    #                    container_version=1,
-    #                    s3_location=str(id))
+    create_table_entry(conn, "container",
+                       container_id=id,
+                       recipe_type="docker",
+                       container_name="bad-docker",
+                       container_version=1,
+                       s3_location=str(id))
     import boto3
 
     s3 = boto3.client('s3')
-    with open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/Dockerfile", 'rb') as f:
-        print(f)
-        # s3.upload_fileobj(f, 'xtract-container-service',
-        #                   '{}/Dockerfile'.format(id))
+    with open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/container_builders/blah/Dockerfile", 'rb') as f:
+        s3.upload_fileobj(f, 'xtract-container-service',
+                          '{}/Dockerfile'.format(id))
 
     print("Success!")
