@@ -5,14 +5,14 @@ import psycopg2.extras
 from configparser import ConfigParser
 
 
-CONTAINER_TABLE = {"container_id": "UUID PRIMARY KEY",
+CONTAINER_TABLE = {"container_id": "TEXT PRIMARY KEY",
                    "recipe_type": "TEXT", "container_name": "TEXT",
                    "container_version": "INT", "pre_containers": "TEXT []",
                    "post_containers": "TEXT []", "replaces_container": "TEXT []",
                    "s3_location": "TEXT"}
 
-BUILD_TABLE = {"build_id": "UUID PRIMARY KEY",
-               "container_id": "UUID REFERENCES container(container_id)",
+BUILD_TABLE = {"build_id": "TEXT PRIMARY KEY",
+               "container_id": "TEXT REFERENCES container(container_id)",
                "build_time": "TIMESTAMP", "last_built": "TIMESTAMP",
                "container_type": "TEXT", "container_size": "INT",
                "build_status": "TEXT", "container_owner": "TEXT",
@@ -136,7 +136,6 @@ def create_table_entry(conn, table_name, **columns):
 
         entry = tuple(entry)
 
-        psycopg2.extras.register_uuid()
         cur = conn.cursor()
         cur.execute(statement, entry)
         conn.commit()
@@ -176,7 +175,6 @@ def update_table_entry(conn, table_name, id, **columns):
         statement = """UPDATE {}
                     SET {}
                     WHERE {}_id = %s""".format(table_name, columns, table_name)
-        psycopg2.extras.register_uuid()
         cur = conn.cursor()
         cur.execute(statement, tuple(values))
         conn.commit()
@@ -307,23 +305,23 @@ def select_by_column(conn, table_name, **columns):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(filename='/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/app.log', filemode='w',
+    logging.basicConfig(filename='app.log', filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
     conn = create_connection()
-    # prep_database(conn)
+    prep_database(conn)
     #
-    id = uuid.uuid4()
-    create_table_entry(conn, "container",
-                       container_id=id,
-                       recipe_type="singularity",
-                       container_name="good-singularity",
-                       container_version=1,
-                       s3_location=str(id))
-    import boto3
-
-    s3 = boto3.client('s3')
-    with open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/good.def", 'rb') as f:
-        s3.upload_fileobj(f, 'xtract-container-service',
-                          '{}/good.def'.format(id))
+    # id = str(uuid.uuid4())
+    # create_table_entry(conn, "container",
+    #                    container_id=id,
+    #                    recipe_type="singularity",
+    #                    container_name="good-singularity",
+    #                    container_version=1,
+    #                    s3_location=str(id))
+    # import boto3
+    #
+    # s3 = boto3.client('s3')
+    # with open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/good.def", 'rb') as f:
+    #     s3.upload_fileobj(f, 'xtract-container-service',
+    #                       '{}/good.def'.format(id))
 
     print("Success!")

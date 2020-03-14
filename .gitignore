@@ -1,5 +1,6 @@
 **/__pycache__
 **/.idea
+**/.ipynb_checkpoints
 **/blah
 *.db
 *.log
@@ -7,4 +8,5 @@
 *.sif
 *.ini
 *.pyc
+*.tar
 Dockerfile
