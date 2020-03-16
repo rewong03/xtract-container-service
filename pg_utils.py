@@ -307,8 +307,8 @@ def select_by_column(conn, table_name, **columns):
 if __name__ == "__main__":
     logging.basicConfig(filename='app.log', filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
-    conn = create_connection()
-    prep_database(conn)
+    # conn = create_connection()
+    # prep_database(conn)
     #
     # id = str(uuid.uuid4())
     # create_table_entry(conn, "container",

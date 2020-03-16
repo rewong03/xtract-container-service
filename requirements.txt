@@ -1,5 +1,8 @@
 docker
 boto3
+psycopg2-binary
 psycopg2
 spython
 namegenerator
+globus_sdk
+fair-research-login

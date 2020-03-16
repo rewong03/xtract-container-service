@@ -1,4 +1,3 @@
-import base64
 import datetime
 import os
 import logging
@@ -30,6 +29,84 @@ def pull_s3_dir(container_id):
     except Exception as e:
         print(e)
         raise e
+
+
+def ecr_login():
+    """Logs Docker into ECR registry.
+
+    Return:
+    registry (str): Name of the ECR registry logged into.
+    """
+    ecr_client = boto3.client('ecr')
+    token = ecr_client.get_authorization_token()
+    registry = token['authorizationData'][0]['proxyEndpoint']
+    subprocess.call(
+        "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin {}".format(registry),
+        shell=True)
+
+    return registry
+
+
+def push_to_ecr(docker_image, build_id, image_name):
+    """Pushes a docker image to an ECR repository.
+
+    Parameters:
+    docker_image (Docker image obj.): Docker image object to push.
+    build_id (str): Build UUID of docker_image.
+    image_name (str): Name of the image of docker_image.
+
+    Return:
+    (str): Response message from docker push or None if it fails.
+    """
+    try:
+        ecr_client = boto3.client("ecr")
+        try:
+            ecr_client.describe_repositories(repositoryNames=[build_id])
+        except:
+            ecr_client.create_repository(repositoryName=build_id)
+        registry = ecr_login()[8:] + "/" + build_id
+        docker_client = docker.from_env()
+        docker_image.tag(registry,
+                         tag=image_name)
+        response = docker_client.images.push(registry)
+        # TODO Find a better way to check if the image was successfully pushed
+        if "sha256" in response:
+            return response
+        else:
+            raise ValueError("Failed to push")
+    except Exception as e:
+        print(e)
+        return None
+
+
+def pull_container(build_id):
+    """Pulls Docker containers from ECR and Singularity containers from S3.
+
+    Parameters:
+    build_id (str): ID of container to pull.
+
+    Return:
+    (file obj.): File object of container.
+    """
+    try:
+        build_entry = select_by_column(create_connection(), "build",
+                                       build_id=build_id)
+        if build_entry is not None and len(build_entry) == 1:
+            build_entry = build_entry[0]
+        else:
+            raise ValueError("Invalid build ID")
+
+        if build_entry["container_type"] == "docker":
+            registry = ecr_login()
+            docker_client = docker.from_env()
+            image = docker_client.images.pull(registry[8:], tag=build_entry["container_name"])
+            return image.save(chunk_size=10485760)
+        else:
+            return "pass"
+
+    except Exception as e:
+        print(e)
+        logging.error("Exception", exc_info=True)
 
 
 def build_to_singularity(container_entry, container_location):
@@ -70,7 +147,6 @@ def build_to_docker(container_entry, image_name):
     try:
         container_id = container_entry["container_id"]
         pull_s3_dir(container_id)
-
         try:
             docker_client = docker.from_env()
             image = docker_client.images.build(path="./{}".format(container_id),
@@ -84,46 +160,6 @@ def build_to_docker(container_entry, image_name):
 
         logging.info("Successfully build {}".format(image_name))
         return image
-    except Exception as e:
-        print(e)
-        return None
-
-
-# When trying to authenticate docker for pushing to ecr, it looks
-# like .get_authorization_token and using docker_client.login aren't
-# working for some reason, requiring us to manually authenticate docker
-# using the aws cli every 12 hours. Might be able to be solved using subprocess
-def push_to_ecr(docker_image, build_id, image_name):
-    """Pushes a docker image to an ECR repository.
-
-    Parameters:
-    docker_image (Docker image obj.): Docker image object to push.
-    build_id (str): Build UUID of docker_image.
-    image_name (str): Name of the image of docker_image.
-
-    Return:
-    (str): Response message from docker push or None if it fails.
-    """
-    try:
-        ecr_client = boto3.client("ecr")
-        try:
-            ecr_client.describe_repositories(repositoryNames=[build_id])
-        except:
-            ecr_client.create_repository(repositoryName=build_id)
-        token = ecr_client.get_authorization_token()
-        username, password = base64.b64decode(token['authorizationData'][0]['authorizationToken']).decode().split(':')
-        registry = token['authorizationData'][0]['proxyEndpoint'] + "/" + build_id
-        docker_client = docker.from_env()
-        docker_client.login(username=username, password=password,
-                            registry=registry)
-        docker_image.tag(registry[8:],
-                         tag=image_name)
-        response = docker_client.images.push(registry[8:])
-        # TODO Find a better way to check if the image was successfully pushed
-        if "sha256" in response:
-            return response
-        else:
-            raise ValueError("Failed to push")
     except Exception as e:
         print(e)
         return None
@@ -353,21 +389,15 @@ def pull_container(build_id):
             raise ValueError("Invalid build ID")
 
         if build_entry["container_type"] == "docker":
-            ecr_client = boto3.client("ecr")
-            token = ecr_client.get_authorization_token()
-            username, password = base64.b64decode(token['authorizationData'][0]['authorizationToken']).decode().split(
-                ':')
-            registry = token['authorizationData'][0]['proxyEndpoint'][8:] + "/" + build_id
+            registry = ecr_login()[8:] + "/" + build_id
             docker_client = docker.from_env()
-            docker_client.login(username=username, password=password,
-                                registry=registry)
             image = docker_client.images.pull(registry, tag=build_entry["container_name"])
-            return image.save(chunk_size=10485760)
+            return image.save()
         else:
             return "pass"
 
     except Exception as e:
-        print(e)
+        print("Exception: {}".format(e))
         logging.error("Exception", exc_info=True)
 
 
@@ -376,4 +406,4 @@ if __name__ == "__main__":
     logging.basicConfig(filename='app.log',
                         filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
-    build_container("d8959909-7efb-4319-813c-16403d602eed", "singularity", "lmao.sif")
+    # build_container("d8959909-7efb-4319-813c-16403d602eed", "singularity", "lmao.sif")
