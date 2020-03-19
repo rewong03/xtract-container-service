@@ -22,7 +22,7 @@ def upload_file():
     intro_obj = conf_app.oauth2_token_introspect(token)
 
     if "client_id" in intro_obj:
-        client_id = intro_obj["client_id"]
+        client_id = str(intro_obj["client_id"])
 
         if 'file' not in request.files:
             abort(400, "No file")
@@ -32,19 +32,19 @@ def upload_file():
         if file:
             filename = file.filename
             conn = create_connection()
-            container_id = str(uuid.uuid4())
-            create_table_entry(conn, "container",
-                               container_id=container_id,
-                               recipe_type="docker",
-                               container_name=filename,
-                               container_version=1,
-                               s3_location=container_id,
-                               owner=client_id)
+            definition_id = str(uuid.uuid4())
+            create_table_entry(conn, "definition",
+                               definition_id=definition_id,
+                               definition_type="docker",
+                               definition_name=filename,
+                               definition_version=1,
+                               s3_location=definition_id,
+                               definition_owner=client_id)
             s3 = boto3.client('s3')
 
             s3.upload_fileobj(file, "xtract-container-service",
-                              '{}/{}'.format(id, filename))
-            return container_id
+                              '{}/{}'.format(definition_id, filename))
+            return definition_id
         else:
             return abort(400, "Failed to upload file")
     else:
@@ -54,13 +54,13 @@ def upload_file():
 @app.route('/build', methods=["POST"])
 def build():
     params = request.json
-    if set(params.keys()) == {"container_id", "to_format",
-                              "container_name"}:
-        return build_container(params["container_id"],
+    required_params = {"definition_id", "to_format", "container_name"}
+    if set(params.keys()) >= required_params:
+        return build_container(params["definition_id"],
                                params["to_format"],
                                params["container_name"])
     else:
-        return "Failed"
+        return "Missing {} parameters".format(required_params.difference(set(params.keys())))
 
 
 @app.route('/pull', methods=["GET"])

@@ -5,21 +5,22 @@ import psycopg2.extras
 from configparser import ConfigParser
 
 
-CONTAINER_TABLE = {"container_id": "TEXT PRIMARY KEY",
-                   "recipe_type": "TEXT", "container_name": "TEXT",
-                   "container_version": "INT", "pre_containers": "TEXT []",
-                   "post_containers": "TEXT []", "replaces_container": "TEXT []",
-                   "s3_location": "TEXT", "owner": "TEXT"}
+DEFINITION_TABLE = {"definition_id": "TEXT PRIMARY KEY",
+                    "definition_type": "TEXT", "definition_name": "TEXT",
+                    "definition_version": "INT", "pre_containers": "TEXT []",
+                    "post_containers": "TEXT []", "replaces_container": "TEXT []",
+                    "s3_location": "TEXT", "definition_owner": "TEXT"}
 
 BUILD_TABLE = {"build_id": "TEXT PRIMARY KEY",
-               "container_id": "TEXT REFERENCES container(container_id)",
-               "build_time": "TIMESTAMP", "last_built": "TIMESTAMP",
-               "container_type": "TEXT", "container_size": "INT",
-               "build_status": "TEXT", "container_owner": "TEXT",
-               "build_location": "TEXT", "container_name": "TEXT"}
+               "definition_id": "TEXT REFERENCES definition(definition_id)",
+               "build_time": "TIMESTAMP", "build_version": "INT",
+               "last_built": "TIMESTAMP", "container_type": "TEXT",
+               "container_size": "INT", "build_status": "TEXT",
+               "container_owner": "TEXT", "build_location": "TEXT",
+               "container_name": "TEXT"}
 
 build_schema = dict(zip(BUILD_TABLE.keys(), [None] * len(BUILD_TABLE)))
-container_schema = dict(zip(CONTAINER_TABLE.keys(), [None] * len(CONTAINER_TABLE)))
+definition_schema = dict(zip(DEFINITION_TABLE.keys(), [None] * len(DEFINITION_TABLE)))
 
 
 def config(config_file='database.ini',
@@ -78,19 +79,19 @@ def prep_database(conn):
     """
     try:
         cur = conn.cursor()
-        container_table_columns = []
+        definition_table_columns = []
         build_table_columns = []
 
-        for column in CONTAINER_TABLE:
-            container_table_columns.append(column + " " + CONTAINER_TABLE[column])
+        for column in DEFINITION_TABLE:
+            definition_table_columns.append(column + " " + DEFINITION_TABLE[column])
 
         for column in BUILD_TABLE:
             build_table_columns.append(column + " " + BUILD_TABLE[column])
 
-        container_command = """CREATE TABLE container ({})""".format(", ".join(container_table_columns))
+        definition_command = """CREATE TABLE definition ({})""".format(", ".join(definition_table_columns))
         build_command = """CREATE TABLE build ({})""".format(", ".join(build_table_columns))
 
-        cur.execute(container_command)
+        cur.execute(definition_command)
         cur.execute(build_command)
 
         cur.close()
@@ -108,7 +109,7 @@ def create_table_entry(conn, table_name, **columns):
     Parameters:
     conn (Connection Obj.): Connection object to db_file.
     table_name (str): Name of table to create an entry to. Currently
-    either "container" or "build".
+    either "definition" or "build".
     **columns (str): The value to write passed with the name
     of the column to write to. E.g. id="1234a". If no value
     for a column is passed then None is defaulted.
@@ -116,10 +117,10 @@ def create_table_entry(conn, table_name, **columns):
     try:
         entry = []
 
-        assert table_name in ["container", "build"], "Not a valid table"
+        assert table_name in ["definition", "build"], "Not a valid table"
 
-        if table_name == "container":
-            table = CONTAINER_TABLE
+        if table_name == "definition":
+            table = DEFINITION_TABLE
         elif table_name == "build":
             table = BUILD_TABLE
 
@@ -151,19 +152,19 @@ def update_table_entry(conn, table_name, id, **columns):
     Parameters:
     conn (Connection Obj.): Connection object to db_file.
     table_name (str): Name of table to create an entry to. Currently
-    either "container" or "build".
+    either "definition" or "build".
     id (str): ID of the entry to change.
     **columns (str): The value to write passed with the name
     of the column to write to. E.g. recipe="1234a".
     """
     try:
-        assert table_name in ["container", "build"], "Not a valid table"
+        assert table_name in ["definition", "build"], "Not a valid table"
 
         values = list(columns.values())
         columns = list(columns.keys())
 
-        if table_name == "container":
-            table = CONTAINER_TABLE
+        if table_name == "definition":
+            table = DEFINITION_TABLE
         elif table_name == "build":
             table = BUILD_TABLE
 
@@ -190,16 +191,16 @@ def select_all_rows(conn, table_name):
     Parameters:
     conn (Connection Obj.): Connection object to db_file.
     table_name (str): Name of table to create an entry to. Currently
-    either "container" or "build".
+    either "definition" or "build".
 
     Return:
     rows (list (dict)): List of dictionaries containing the
     columns and their values
     """
-    assert table_name in ["container", "build"], "Not a valid table"
+    assert table_name in ["definition", "build"], "Not a valid table"
 
-    if table_name == "container":
-        table = CONTAINER_TABLE
+    if table_name == "definition":
+        table = DEFINITION_TABLE
     elif table_name == "build":
         table = BUILD_TABLE
 
@@ -222,7 +223,7 @@ def search_array(conn, table_name, array, value):
     Parameters:
     conn (Connection Obj.): Connection object to db_file.
     table_name (str): Name of table to create an entry to. Currently
-    either "container" or "build".
+    either "definition" or "build".
     array (str): Name of array column to search.
     value: Value inside of array to search for.
 
@@ -230,10 +231,10 @@ def search_array(conn, table_name, array, value):
     rows (list(dict)): List of rows that match the values.
     """
     try:
-        assert table_name in ["container", "build"], "Not a valid table"
+        assert table_name in ["definition", "build"], "Not a valid table"
 
-        if table_name == "container":
-            table = CONTAINER_TABLE
+        if table_name == "definition":
+            table = DEFINITION_TABLE
         elif table_name == "build":
             table = BUILD_TABLE
 
@@ -258,12 +259,12 @@ def search_array(conn, table_name, array, value):
 
 
 def select_by_column(conn, table_name, **columns):
-    """Searches containers table by values for columns.
+    """Searches table by values for columns.
 
     Parameters:
     conn (Connection Obj.): Connection object to db_file.
     table_name (str): Name of table to create an entry to. Currently
-    either "container" or "build".
+    either "definition" or "build".
     **columns (str): The value to search passed with the value
     to search for. E.g. recipe="1234a".
 
@@ -271,10 +272,10 @@ def select_by_column(conn, table_name, **columns):
     rows (list(dict)): List of rows that match the values.
     """
     try:
-        assert table_name in ["container", "build"], "Not a valid table"
+        assert table_name in ["definition", "build"], "Not a valid table"
 
-        if table_name == "container":
-            table = CONTAINER_TABLE
+        if table_name == "definition":
+            table = DEFINITION_TABLE
         elif table_name == "build":
             table = BUILD_TABLE
 
