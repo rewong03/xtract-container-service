@@ -9,7 +9,7 @@ CONTAINER_TABLE = {"container_id": "TEXT PRIMARY KEY",
                    "recipe_type": "TEXT", "container_name": "TEXT",
                    "container_version": "INT", "pre_containers": "TEXT []",
                    "post_containers": "TEXT []", "replaces_container": "TEXT []",
-                   "s3_location": "TEXT"}
+                   "s3_location": "TEXT", "owner": "TEXT"}
 
 BUILD_TABLE = {"build_id": "TEXT PRIMARY KEY",
                "container_id": "TEXT REFERENCES container(container_id)",

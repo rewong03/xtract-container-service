@@ -1,46 +1,54 @@
 import boto3
-from flask import Flask, request, send_file
+from flask import Flask, request, send_file, abort
 from globus_sdk import ConfidentialAppAuthClient
 from container_handler import *
 
 app = Flask(__name__)
 
+
 @app.route('/')
-@app.route('/index')
 def index():
     return "Hello, World!"
 
 
 @app.route('/upload_def_file', methods=["POST"])
 def upload_file():
+    if 'Authorization' not in request.headers:
+        abort(401, 'You must be logged in to perform this function.')
+
     token = request.headers.get('Authorization')
     token = str.replace(str(token), 'Bearer ', '')
     conf_app = ConfidentialAppAuthClient(os.environ["GL_CLIENT"], os.environ["GL_CLIENT_SECRET"])
     intro_obj = conf_app.oauth2_token_introspect(token)
-    print(f"Auth Token Introspection: {intro_obj}")
 
-    if 'file' not in request.files:
-        return "No file"
-    file = request.files['file']
-    if file.filename == '':
-        return "No file selected"
-    if file:
-        filename = file.filename
-        conn = create_connection()
-        id = str(uuid.uuid4())
-        create_table_entry(conn, "container",
-                           container_id=id,
-                           recipe_type="docker",
-                           container_name=filename,
-                           container_version=1,
-                           s3_location=id)
-        s3 = boto3.client('s3')
+    if "client_id" in intro_obj:
+        client_id = intro_obj["client_id"]
 
-        s3.upload_fileobj(file, "xtract-container-service",
-                          '{}/{}'.format(id, filename))
-        return id
+        if 'file' not in request.files:
+            abort(400, "No file")
+        file = request.files['file']
+        if file.filename == '':
+            abort(400, "No file selected")
+        if file:
+            filename = file.filename
+            conn = create_connection()
+            container_id = str(uuid.uuid4())
+            create_table_entry(conn, "container",
+                               container_id=container_id,
+                               recipe_type="docker",
+                               container_name=filename,
+                               container_version=1,
+                               s3_location=container_id,
+                               owner=client_id)
+            s3 = boto3.client('s3')
+
+            s3.upload_fileobj(file, "xtract-container-service",
+                              '{}/{}'.format(id, filename))
+            return container_id
+        else:
+            return abort(400, "Failed to upload file")
     else:
-        return "Failed"
+        abort(400, "Failed to authenticate user")
 
 
 @app.route('/build', methods=["POST"])
@@ -79,5 +87,5 @@ if __name__ == "__main__":
     logging.basicConfig(filename='app.log',
                         filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
-    app.run(debug=True, threaded=True)
+    app.run(debug=True)
 
