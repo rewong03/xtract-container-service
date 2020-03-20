@@ -251,11 +251,13 @@ def convert_definition_file(definition_id, singularity_def_name=None):
         shutil.rmtree(new_path)
 
 
-def build_container(definition_id, to_format, container_name):
+def build_container(owner_id, definition_id, to_format, container_name):
     """Automated pipeline for building a recipe file from the
     definition db to a container.
 
     Parameters
+    owner_id (str): ID of definition file owner as returned by Globus Auth.
+    token introspection.
     definition_id (str): ID of definition db entry to build from.
     to_format (str): Format of container to build. Either "singularity"
     or "docker". If "docker", the recipe type must be a Dockerfile.
@@ -269,6 +271,9 @@ def build_container(definition_id, to_format, container_name):
                                             definition_id=definition_id)
         if definition_entry is not None and len(definition_entry) == 1:
             definition_entry = definition_entry[0]
+
+            if definition_entry["definition_owner"] != owner_id:
+                return "You do not have access to this definition file"
         else:
             raise ValueError("No db entry for {}".format(definition_id))
         build_entry = select_by_column(create_connection(), "build",
@@ -285,6 +290,7 @@ def build_container(definition_id, to_format, container_name):
             build_entry["container_name"] = container_name
             build_entry["definition_id"] = definition_id
             build_entry["container_type"] = to_format
+            build_entry["container_owner"] = owner_id
             build_entry["build_status"] = "pending"
             create_table_entry(create_connection(), "build",
                                **build_entry)
@@ -318,7 +324,6 @@ def build_container(definition_id, to_format, container_name):
                 response = push_to_ecr(docker_image, str(build_entry["build_id"]),
                                        container_name)
                 if response is not None:
-                    print("WE HERE BOYS")
                     update_table_entry(create_connection(), "build",
                                        build_entry["build_id"], **{"build_status": "success"})
                     docker.from_env().images.remove(container_name, force=True)
@@ -372,10 +377,12 @@ def build_container(definition_id, to_format, container_name):
         return "Failed"
 
 
-def pull_container(build_id):
+def pull_container(owner_id, build_id):
     """Pulls Docker containers from ECR and Singularity containers from S3.
 
     Parameters:
+    owner_id (str): ID of definition file owner as returned by Globus Auth.
+    token introspection.
     build_id (str): ID of container to pull.
 
     Return:
@@ -386,9 +393,11 @@ def pull_container(build_id):
                                        build_id=build_id)
         if build_entry is not None and len(build_entry) == 1:
             build_entry = build_entry[0]
+
+            if build_entry["container_owner"] != owner_id:
+                return "You do not have access to this definition file"
         else:
             raise ValueError("Invalid build ID")
-
         if build_entry["container_type"] == "docker":
             registry = ecr_login()[8:] + "/" + build_id
             docker_client = docker.from_env()
