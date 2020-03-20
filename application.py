@@ -37,9 +37,8 @@ def upload_file():
             definition_id = str(uuid.uuid4())
             create_table_entry(conn, "definition",
                                definition_id=definition_id,
-                               definition_type="docker",
+                               definition_type="docker" if filename == "Dockerfile" else "singularity",
                                definition_name=filename,
-                               definition_version=1,
                                s3_location=definition_id,
                                definition_owner=client_id)
             s3 = boto3.client('s3')
@@ -90,17 +89,17 @@ def pull():
         client_id = intro_obj["client_id"]
         params = request.json
         if "build_id" in params:
-            f = open('./temp.tar', 'wb') #Maybe it might be better to use python's temp file library
             try:
-                gen = pull_container(client_id, params["build_id"])
-                for chunk in gen:
-                    f.write(chunk)
-                response = send_file("Dockerfile")
-                os.remove("./temp.tar")
+                file_path = pull_container(client_id, params["build_id"])
+                response = send_file(file_path)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+
                 return response
             except Exception as e:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
                 print("Exception: {}".format(e))
-                os.remove("./temp.tar")
                 return "Failed"
         else:
             return "Failed"

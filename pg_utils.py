@@ -7,9 +7,9 @@ from configparser import ConfigParser
 
 DEFINITION_TABLE = {"definition_id": "TEXT PRIMARY KEY",
                     "definition_type": "TEXT", "definition_name": "TEXT",
-                    "definition_version": "INT", "pre_containers": "TEXT []",
-                    "post_containers": "TEXT []", "replaces_container": "TEXT []",
-                    "s3_location": "TEXT", "definition_owner": "TEXT"}
+                    "pre_containers": "TEXT []", "post_containers": "TEXT []",
+                    "replaces_container": "TEXT []", "s3_location": "TEXT",
+                    "definition_owner": "TEXT"}
 
 BUILD_TABLE = {"build_id": "TEXT PRIMARY KEY",
                "definition_id": "TEXT REFERENCES definition(definition_id)",
@@ -116,7 +116,6 @@ def create_table_entry(conn, table_name, **columns):
     """
     try:
         entry = []
-
         assert table_name in ["definition", "build"], "Not a valid table"
 
         if table_name == "definition":

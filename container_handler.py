@@ -3,6 +3,7 @@ import os
 import logging
 import subprocess
 import shutil
+import tempfile
 import uuid
 import boto3
 import docker
@@ -86,7 +87,7 @@ def pull_container(build_id):
     build_id (str): ID of container to pull.
 
     Return:
-    (file obj.): File object of container.
+    (file obj. gen.): File generator for the Docker container.
     """
     try:
         build_entry = select_by_column(create_connection(), "build",
@@ -116,6 +117,10 @@ def build_to_singularity(definition_entry, container_location):
     Parameters:
     definition_entry (str): Entry of definition db entry to build singularity container from.
     container_location (str): Path to location to build the container.
+
+    Return:
+    container_location: Returns the location of the Singularity container or None if it
+    fails to save.
     """
     try:
         definition_id = definition_entry["definition_id"]
@@ -142,7 +147,7 @@ def build_to_docker(definition_entry, image_name):
     image_name (str): Name to tag the final image with.
 
     Return:
-    image (Image obj.): Docker image object.
+    image (Image obj.): Docker image object or None if the container fails to build.
     """
     try:
         definition_id = definition_entry["definition_id"]
@@ -255,7 +260,7 @@ def build_container(owner_id, definition_id, to_format, container_name):
     """Automated pipeline for building a recipe file from the
     definition db to a container.
 
-    Parameters
+    Parameters:
     owner_id (str): ID of definition file owner as returned by Globus Auth.
     token introspection.
     definition_id (str): ID of definition db entry to build from.
@@ -263,12 +268,17 @@ def build_container(owner_id, definition_id, to_format, container_name):
     or "docker". If "docker", the recipe type must be a Dockerfile.
     container_name (str): Name to give the container or path for path for
     Singularity container.
+
+    Return:
+    build_id (str): Build id of the built container or failed if the container
+    failed to build.
     """
     try:
         assert to_format in ["docker", "singularity"], "{} is not a valid container format".format(to_format)
         definition_entry = select_by_column(create_connection(),
                                             "definition",
                                             definition_id=definition_id)
+        print(definition_entry)
         if definition_entry is not None and len(definition_entry) == 1:
             definition_entry = definition_entry[0]
 
@@ -402,9 +412,29 @@ def pull_container(owner_id, build_id):
             registry = ecr_login()[8:] + "/" + build_id
             docker_client = docker.from_env()
             image = docker_client.images.pull(registry, tag=build_entry["container_name"])
-            return image.save()
+            try:
+                with open("temp.tar", "wb") as f:
+                    for chunk in image.save():
+                        f.write(chunk)
+
+                return "temp.tar"
+            except Exception as e:
+                if os.path.exists("temp.tar"):
+                    os.remove("temp.tar")
+                print(e)
         else:
-            return "pass"
+            try:
+                s3 = boto3.client('s3')
+                s3.download_file('xtract-container-service', os.path.join(build_entry["build_id"],
+                                                                          build_entry["container_name"]),
+                                 "temp.sif")
+                return "temp.sif"
+            except Exception as e:
+                if os.path.exists("temp.sif"):
+                    os.remove("temp.sif")
+                print(e)
+                return "Failed"
+
 
     except Exception as e:
         print("Exception: {}".format(e))
