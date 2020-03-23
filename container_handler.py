@@ -4,6 +4,7 @@ import logging
 import subprocess
 import shutil
 import tempfile
+import time
 import uuid
 import boto3
 import docker
@@ -72,7 +73,7 @@ def push_to_ecr(docker_image, build_id, image_name):
         response = docker_client.images.push(registry)
         # TODO Find a better way to check if the image was successfully pushed
         if "sha256" in response:
-            return response
+            return docker_image.id[7:]
         else:
             raise ValueError("Failed to push")
     except Exception as e:
@@ -126,7 +127,10 @@ def build_to_singularity(definition_entry, container_location):
         definition_id = definition_entry["definition_id"]
         pull_s3_dir(definition_id)
         Client.load("./" + definition_id)
-        Client.build(image=os.path.join("./", container_location))
+        #TODO: It looks like the rm and forcerm kwargs aren't doing what they're supposed to
+        # so we can't fully delete images after being built
+        Client.build(image=os.path.join("./", container_location),
+                     rm=True, forcerm=True)
         shutil.rmtree("./" + definition_id)
         #TODO Find a better way to error check
         if os.path.exists(container_location):
@@ -278,7 +282,6 @@ def build_container(owner_id, definition_id, to_format, container_name):
         definition_entry = select_by_column(create_connection(),
                                             "definition",
                                             definition_id=definition_id)
-        print(definition_entry)
         if definition_entry is not None and len(definition_entry) == 1:
             definition_entry = definition_entry[0]
 
@@ -313,15 +316,18 @@ def build_container(owner_id, definition_id, to_format, container_name):
         update_table_entry(create_connection(), "build",
                            build_entry["build_id"], **{"build_status": "building"})
         if to_format == "docker":
-            import time
             t0 = time.time()
+            client = docker.from_env()
+            print("BEFORE BUILD: {}".format(client.containers.list(all=True)))
             docker_image = build_to_docker(definition_entry, container_name)
+            print("AFTER BUILD: {}".format(client.containers.list(all=True)))
             print("Build time {}".format(time.time() - t0))
             if docker_image:
+                docker_client = docker.from_env()
                 docker_image = docker_image[0]
                 last_built = build_entry["build_time"] if build_entry["build_time"] else None
                 build_time = datetime.datetime.now()
-                for image in docker.from_env().df()["Images"]:
+                for image in docker_client.df()["Images"]:
                     for repo_tag in image["RepoTags"]:
                         if container_name in repo_tag:
                             container_size = image["Size"]
@@ -331,12 +337,17 @@ def build_container(owner_id, definition_id, to_format, container_name):
                                                                "build_time": build_time,
                                                                "last_built": last_built,
                                                                "container_size": container_size})
+                print("BEFORE PUSH: {}".format(client.containers.list(all=True)))
                 response = push_to_ecr(docker_image, str(build_entry["build_id"]),
                                        container_name)
+                print("AFTER PUSH: {}".format(client.containers.list(all=True)))
                 if response is not None:
                     update_table_entry(create_connection(), "build",
                                        build_entry["build_id"], **{"build_status": "success"})
-                    docker.from_env().images.remove(container_name, force=True)
+                    #TODO: When removing the image it leaves behind an image with no name.
+                    print("BEFORE REMOVE: {}".format(client.containers.list(all=True)))
+                    docker_client.images.remove(response, force=True)
+                    print("AFTER REMOVE: {}".format(client.containers.list(all=True)))
                     return build_entry["build_id"]
                 else:
                     update_table_entry(create_connection(), "build",
