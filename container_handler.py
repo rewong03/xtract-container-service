@@ -58,7 +58,7 @@ def push_to_ecr(docker_image, build_id, image_name):
     image_name (str): Name of the image of docker_image.
 
     Return:
-    (str): Response message from docker push or None if it fails.
+    (str): ID of pushed Docker image or None if the push fails.
     """
     try:
         ecr_client = boto3.client("ecr")
@@ -112,7 +112,7 @@ def pull_container(build_id):
 
 
 def build_to_singularity(definition_entry, container_location):
-    """Builds a Singularity container from a Dockerfile or Singularity file
+    """Builds a Singularity container from a Dockerfile0 or Singularity file
     within the definition db.
 
     Parameters:
@@ -176,12 +176,12 @@ def build_to_docker(definition_entry, image_name):
 
 #TODO: Find a better way to name converted Singularity definition files
 def convert_definition_file(definition_id, singularity_def_name=None):
-    """Converts a Dockerfile to a Singularity definition file or vice versa.
+    """Converts a Dockerfile0 to a Singularity definition file or vice versa.
 
     Parameters:
     definition_id (str): ID of definitio db entry to convert.
     singularity_def_name (str): Name to give to converted .def file if converting
-    from Dockerfile to Singularity definition file.
+    from Dockerfile0 to Singularity definition file.
     """
     try:
         definition_entry = select_by_column(create_connection(), "definition",
@@ -202,7 +202,7 @@ def convert_definition_file(definition_id, singularity_def_name=None):
                         shell=True)
 
         for file in os.listdir(new_path):
-            if file == "Dockerfile" or file.endswith(".def"):
+            if file == "Dockerfile0" or file.endswith(".def"):
                 input_file = file
                 break
             else:
@@ -229,7 +229,7 @@ def convert_definition_file(definition_id, singularity_def_name=None):
 
             file_path = os.path.join(str(new_definition_id), singularity_def_name)
         else:
-            file_path = os.path.join(str(new_definition_id), "Dockerfile")
+            file_path = os.path.join(str(new_definition_id), "Dockerfile0")
 
         with open(file_path, 'w') as f:
             f.write(result)
@@ -260,7 +260,7 @@ def convert_definition_file(definition_id, singularity_def_name=None):
         shutil.rmtree(new_path)
 
 
-def build_container(owner_id, definition_id, to_format, container_name):
+def build_container(owner_id, definition_id, build_id, to_format, container_name):
     """Automated pipeline for building a recipe file from the
     definition db to a container.
 
@@ -269,9 +269,11 @@ def build_container(owner_id, definition_id, to_format, container_name):
     token introspection.
     definition_id (str): ID of definition db entry to build from.
     to_format (str): Format of container to build. Either "singularity"
-    or "docker". If "docker", the recipe type must be a Dockerfile.
+    or "docker". If "docker", the recipe type must be a Dockerfile0.
     container_name (str): Name to give the container or path for path for
     Singularity container.
+    build_id (str): UUID to give to a new build entry. build_id should be None if
+    a build entry exists for definition_id.
 
     Return:
     build_id (str): Build id of the built container or failed if the container
@@ -299,7 +301,7 @@ def build_container(owner_id, definition_id, to_format, container_name):
                                build_entry["build_id"], **build_entry)
         else:
             build_entry = build_schema
-            build_entry["build_id"] = str(uuid.uuid4())
+            build_entry["build_id"] = build_id if build_id is not None else str(uuid.uuid4())
             build_entry["container_name"] = container_name
             build_entry["definition_id"] = definition_id
             build_entry["container_type"] = to_format
@@ -307,7 +309,7 @@ def build_container(owner_id, definition_id, to_format, container_name):
             build_entry["build_status"] = "pending"
             create_table_entry(create_connection(), "build",
                                **build_entry)
-
+        print(definition_entry)
         if definition_entry["definition_type"] == "singularity" and to_format == "docker":
             update_table_entry(create_connection(), "build",
                                build_entry["build_id"], **{"build_status": "error"})
@@ -317,10 +319,7 @@ def build_container(owner_id, definition_id, to_format, container_name):
                            build_entry["build_id"], **{"build_status": "building"})
         if to_format == "docker":
             t0 = time.time()
-            client = docker.from_env()
-            print("BEFORE BUILD: {}".format(client.containers.list(all=True)))
             docker_image = build_to_docker(definition_entry, container_name)
-            print("AFTER BUILD: {}".format(client.containers.list(all=True)))
             print("Build time {}".format(time.time() - t0))
             if docker_image:
                 docker_client = docker.from_env()
@@ -337,17 +336,15 @@ def build_container(owner_id, definition_id, to_format, container_name):
                                                                "build_time": build_time,
                                                                "last_built": last_built,
                                                                "container_size": container_size})
-                print("BEFORE PUSH: {}".format(client.containers.list(all=True)))
+                print("Pushing...")
                 response = push_to_ecr(docker_image, str(build_entry["build_id"]),
                                        container_name)
-                print("AFTER PUSH: {}".format(client.containers.list(all=True)))
+                print("Done pushing")
                 if response is not None:
                     update_table_entry(create_connection(), "build",
                                        build_entry["build_id"], **{"build_status": "success"})
                     #TODO: When removing the image it leaves behind an image with no name.
-                    print("BEFORE REMOVE: {}".format(client.containers.list(all=True)))
                     docker_client.images.remove(response, force=True)
-                    print("AFTER REMOVE: {}".format(client.containers.list(all=True)))
                     return build_entry["build_id"]
                 else:
                     update_table_entry(create_connection(), "build",
