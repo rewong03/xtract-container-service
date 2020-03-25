@@ -10,21 +10,21 @@ app = Flask(__name__)
 
 @app.after_request
 def submit_tasks(response):
-    MAX_THREADS = 8 #Just an arbitrary number for now
+    MAX_THREADS = 8 #Just an arbitrary number for now. Also doesn't account for threads from other processes
     while True:
-        print("______")
         task = pull_off_queue()
-        print("NUMBER OF THREADS: {}".format(threading.active_count()))
-        print("TASK DETAILS: {}".format(task))
         if threading.active_count() >= MAX_THREADS or task is None:
             break
         else:
+            print("______")
+            print(threading.enumerate())
+            print("NUMBER OF THREADS: {}".format(threading.active_count()))
+            print("TASK DETAILS: {}".format(task))
             print("Trying to start thread...")
             thread = threading.Thread(target=build_container, args=tuple(task.values()))
             thread.start()
             print("Thread started...")
             time.sleep(3)
-    print("Done")
     return response
 
 

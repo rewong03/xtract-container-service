@@ -70,14 +70,15 @@ def push_to_ecr(docker_image, build_id, image_name):
         docker_client = docker.from_env()
         docker_image.tag(registry,
                          tag=image_name)
-        response = docker_client.images.push(registry)
+        response = docker_client.images.push(registry, stream=False)
         # TODO Find a better way to check if the image was successfully pushed
         if "sha256" in response:
             return docker_image.id[7:]
         else:
+            print("FAILED: {}".format(response))
             raise ValueError("Failed to push")
     except Exception as e:
-        print(e)
+        print("EXCEPTION: {}".format(e))
         return None
 
 
@@ -309,7 +310,9 @@ def build_container(owner_id, definition_id, build_id, to_format, container_name
             build_entry["build_status"] = "pending"
             create_table_entry(create_connection(), "build",
                                **build_entry)
-        print(definition_entry)
+
+        logging.info("Created build entry for {}".format(build_entry["build_id"]))
+
         if definition_entry["definition_type"] == "singularity" and to_format == "docker":
             update_table_entry(create_connection(), "build",
                                build_entry["build_id"], **{"build_status": "error"})
@@ -320,7 +323,10 @@ def build_container(owner_id, definition_id, build_id, to_format, container_name
         if to_format == "docker":
             t0 = time.time()
             docker_image = build_to_docker(definition_entry, container_name)
-            print("Build time {}".format(time.time() - t0))
+
+            logging.info("Finished building {} in {} seconds".format(build_entry["build_id"],
+                                                                     time.time() - t0))
+
             if docker_image:
                 docker_client = docker.from_env()
                 docker_image = docker_image[0]
@@ -336,10 +342,15 @@ def build_container(owner_id, definition_id, build_id, to_format, container_name
                                                                "build_time": build_time,
                                                                "last_built": last_built,
                                                                "container_size": container_size})
-                print("Pushing...")
+                t0 = time.time()
+                logging.info("Pushing {}".format(build_entry["build_id"]))
                 response = push_to_ecr(docker_image, str(build_entry["build_id"]),
                                        container_name)
-                print("Done pushing")
+                logging.info("Finished pushing {} in {}".format(build_entry["build_id"],
+                                                                time.time() - t0))
+                print("!!!!!!!!!!!!!!!!!")
+                print("PUSH RESPONSE: {}".format(response))
+                print("!!!!!!!")
                 if response is not None:
                     update_table_entry(create_connection(), "build",
                                        build_entry["build_id"], **{"build_status": "success"})
