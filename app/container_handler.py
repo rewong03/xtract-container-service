@@ -12,8 +12,16 @@ import namegenerator
 from spython.main import Client
 from spython.main.parse.parsers import get_parser
 from spython.main.parse.writers import get_writer
-from pg_utils import *
+from app import celery_app
+from app.pg_utils import *
 
+
+
+@celery_app.task(bind=True)
+def add(self, x, y):
+    time.sleep(10)
+    print(x + y)
+    return x + y
 
 def pull_s3_dir(definition_id):
     """Pulls a directory of files from a definition_id folder in our
@@ -261,7 +269,9 @@ def convert_definition_file(definition_id, singularity_def_name=None):
         shutil.rmtree(new_path)
 
 
-def build_container(owner_id, definition_id, build_id, to_format, container_name):
+@celery_app.task(bind=True, default_retry_delay=0)
+def build_container(owner_id, definition_id, build_id, to_format, container_name,
+                    thread_id):
     """Automated pipeline for building a recipe file from the
     definition db to a container.
 
@@ -297,9 +307,10 @@ def build_container(owner_id, definition_id, build_id, to_format, container_name
                                        container_type=to_format)
         if build_entry is not None and len(build_entry) == 1:
             build_entry = build_entry[0]
+            build_id = build_entry["build_id"]
             build_entry["build_status"] = "pending"
             update_table_entry(create_connection(), "build",
-                               build_entry["build_id"], **build_entry)
+                               build_id, **build_entry)
         else:
             build_entry = build_schema
             build_entry["build_id"] = build_id if build_id is not None else str(uuid.uuid4())
@@ -311,21 +322,28 @@ def build_container(owner_id, definition_id, build_id, to_format, container_name
             create_table_entry(create_connection(), "build",
                                **build_entry)
 
-        logging.info("Created build entry for {}".format(build_entry["build_id"]))
+        logging.info("Created build entry for {}".format(build_id))
 
         if definition_entry["definition_type"] == "singularity" and to_format == "docker":
             update_table_entry(create_connection(), "build",
-                               build_entry["build_id"], **{"build_status": "error"})
+                               build_id, **{"build_status": "error"})
             raise ValueError("Can't build Docker container from Singularity file")
 
         update_table_entry(create_connection(), "build",
-                           build_entry["build_id"], **{"build_status": "building"})
+                           build_id, **{"build_status": "building"})
         if to_format == "docker":
+            # time.sleep(10)
+            # logging.info("{} {} {} {} {}".format(owner_id, definition_id, build_id, to_format, container_name))
+            # print("THREAD_ID: {}".format(thread_id))
+            # print("{} {} {} {} {}".format(owner_id, definition_id, build_id, to_format, container_name))
+            # return "blah"
             t0 = time.time()
             docker_image = build_to_docker(definition_entry, container_name)
 
-            logging.info("Finished building {} in {} seconds".format(build_entry["build_id"],
-                                                                     time.time() - t0))
+            logging.info("THREAD: {}, Finished building {}: (ID {}) in {} seconds".format(thread_id,
+                                                                                          container_name,
+                                                                                          build_id,
+                                                                                          time.time() - t0))
 
             if docker_image:
                 docker_client = docker.from_env()
@@ -337,34 +355,42 @@ def build_container(owner_id, definition_id, build_id, to_format, container_name
                         if container_name in repo_tag:
                             container_size = image["Size"]
                             break
+                # print("SETTING TO PUSHING THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
                 update_table_entry(create_connection(), "build",
-                                   build_entry["build_id"], **{"build_status": "pushing",
+                                   build_id, **{"build_status": "pushing",
                                                                "build_time": build_time,
                                                                "last_built": last_built,
                                                                "container_size": container_size})
                 t0 = time.time()
-                logging.info("Pushing {}".format(build_entry["build_id"]))
-                response = push_to_ecr(docker_image, str(build_entry["build_id"]),
+                logging.info("Pushing {}".format(build_id))
+                response = push_to_ecr(docker_image, build_id,
                                        container_name)
-                logging.info("Finished pushing {} in {}".format(build_entry["build_id"],
+                logging.info("Finished pushing {} in {}".format(build_id,
                                                                 time.time() - t0))
-                print("!!!!!!!!!!!!!!!!!")
-                print("PUSH RESPONSE: {}".format(response))
-                print("!!!!!!!")
+                # print("FINISHED PUSHING THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
+                # print("!!!!!!!!!!!!!!!!!")
+                # print("PUSH RESPONSE: {}".format(response))
+                # print("!!!!!!!")
                 if response is not None:
+                    # print("UPDATING TO SUCCESS THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
                     update_table_entry(create_connection(), "build",
-                                       build_entry["build_id"], **{"build_status": "success"})
+                                       build_id, **{"build_status": "success"})
                     #TODO: When removing the image it leaves behind an image with no name.
                     docker_client.images.remove(response, force=True)
-                    return build_entry["build_id"]
+                    # print("FINISHED UPDSTING THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
+                    return build_id
                 else:
+                    # print("UPDATING TO FAILED THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
                     update_table_entry(create_connection(), "build",
-                                       build_entry["build_id"], **{"build_status": "failed"})
+                                       build_id, **{"build_status": "failed"})
                     docker.from_env().images.remove(container_name, force=True)
+                    # print("FINISHED UPDATINGN THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
                     raise ValueError("Failed to push")
             else:
+                # print("THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
                 update_table_entry(create_connection(), "build",
-                                   build_entry["build_id"], **{"build_status": "failed"})
+                                   build_id, **{"build_status": "failed"})
+                # print("THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
                 raise ValueError("Failed to build docker container")
 
         elif to_format == "singularity":

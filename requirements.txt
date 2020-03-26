@@ -6,3 +6,4 @@ spython
 namegenerator
 globus_sdk
 fair-research-login
+flask

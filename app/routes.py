@@ -1,36 +1,46 @@
+import os
 import threading
+import time
 import boto3
-from flask import Flask, request, send_file, abort
+from app import app
+from flask import request, send_file, abort
 from globus_sdk import ConfidentialAppAuthClient
-from container_handler import *
-from sqs_queue_utils import *
+from app.pg_utils import *
+from app.container_handler import add, build_container, pull_container
+from app.sqs_queue_utils import *
 
-app = Flask(__name__)
 
-
-@app.after_request
-def submit_tasks(response):
-    MAX_THREADS = 8 #Just an arbitrary number for now. Also doesn't account for threads from other processes
-    while True:
-        task = pull_off_queue()
-        if threading.active_count() >= MAX_THREADS or task is None:
-            break
-        else:
-            print("______")
-            print(threading.enumerate())
-            print("NUMBER OF THREADS: {}".format(threading.active_count()))
-            print("TASK DETAILS: {}".format(task))
-            print("Trying to start thread...")
-            thread = threading.Thread(target=build_container, args=tuple(task.values()))
-            thread.start()
-            print("Thread started...")
-            time.sleep(3)
-    return response
+# @app.after_request
+# def submit_tasks(response):
+#     MAX_THREADS = 8 #Just an arbitrary number for now. Also doesn't account for threads from other processes
+#     # threads = []
+#     print("______")
+#     print(threading.enumerate())
+#     while True:
+#         task = pull_off_queue()
+#         if task is None:
+#             break
+#         if threading.active_count() >= MAX_THREADS:
+#             put_on_queue(task)
+#         else:
+#             print("NUMBER OF THREADS: {}".format(threading.active_count()))
+#             print("TASK DETAILS: {}".format(task))
+#             print("Trying to start thread...")
+#             task = list(task.values())
+#             task.append(str(uuid.uuid4()))
+#             thread = threading.Thread(target=build_container, args=tuple(task))
+#             # threads.append(thread)
+#             thread.start()
+#             print("Thread started...")
+#             time.sleep(3)
+#             # for thread in threads:
+#             #     thread.join()
+#     return response
 
 
 @app.route('/')
 def index():
-    return "Hello, World!"
+    return "Hello, there!"
 
 
 #TODO: Almost every function in container_handler and pg_utils logs and catches errors
@@ -91,10 +101,13 @@ def build():
             required_params = {"definition_id", "to_format", "container_name"}
             if set(params.keys()) >= required_params:
                 build_id = str(uuid.uuid4())
-                task = {"owner_id": client_id, "definition_id": params["definition_id"],
-                        "build_id": build_id, "to_format": params["to_format"],
-                        "container_name": params["container_name"]}
-                put_on_queue(task)
+                print("HERE")
+                task = add.apply_async(args=[500, 100000])
+                print("TASK: {}".format(task))
+                # task = {"owner_id": client_id, "definition_id": params["definition_id"],
+                #         "build_id": build_id, "to_format": params["to_format"],
+                #         "container_name": params["container_name"]}
+                # put_on_queue(task)
                 return build_id
             else:
                 abort(400, "Missing {} parameters".format(required_params.difference(set(params.keys()))))
@@ -142,9 +155,9 @@ def pull():
         abort(400, "Failed to authenticate user")
 
 
-if __name__ == "__main__":
-    logging.basicConfig(filename='app.log',
-                        filemode='w',
-                        level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
-    app.run(debug=True, threaded=True)
+# if __name__ == "__main__":
+#     logging.basicConfig(filename='app.log',
+#                         filemode='w',
+#                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
+#     app.run(debug=True, threaded=True)
 
