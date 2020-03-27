@@ -1,14 +1,11 @@
 import os
-import threading
-import time
+import uuid
 import boto3
 from app import app
 from flask import request, send_file, abort
 from globus_sdk import ConfidentialAppAuthClient
-from app.pg_utils import *
+from app.pg_utils import create_table_entry, select_by_column
 from app.container_handler import build_container, pull_container
-from app.sqs_queue_utils import *
-
 
 
 @app.route('/')
@@ -38,9 +35,8 @@ def upload_file():
             abort(400, "No file selected")
         if file:
             filename = file.filename
-            conn = create_connection()
             definition_id = str(uuid.uuid4())
-            create_table_entry(conn, "definition",
+            create_table_entry("definition",
                                definition_id=definition_id,
                                definition_type="docker" if filename == "Dockerfile" else "singularity",
                                definition_name=filename,
@@ -60,7 +56,7 @@ def upload_file():
 @app.route('/build', methods=["POST", "GET"])
 def build():
     if 'Authorization' not in request.headers:
-        abort(401, 'You must be logged in to perform this function.')
+        abort(401, "You must be logged in to perform this function.")
 
     token = request.headers.get('Authorization')
     token = str.replace(str(token), 'Bearer ', '')
@@ -73,21 +69,24 @@ def build():
             params = request.json
             required_params = {"definition_id", "to_format", "container_name"}
             if set(params.keys()) >= required_params:
-                build_id = str(uuid.uuid4())
-                # print("HERE")
-                task = {"owner_id": client_id, "definition_id": params["definition_id"],
-                        "build_id": build_id, "to_format": params["to_format"],
-                        "container_name": params["container_name"]}
-                task = build_container.apply_async(args=[client_id, params["definition_id"],
-                                                         build_id, params["to_format"],
-                                                         params["container_name"],
-                                                         str(uuid.uuid4())])
-                return build_id
+                definition_entry = select_by_column("definition", definition_id=params["definition_id"])
+                if definition_entry is not None and len(definition_entry) == 1:
+                    definition_entry = definition_entry[0]
+                    if definition_entry["definition_owner"] != client_id:
+                        abort(400, "You don't have permission to use this definition file")
+                    else:
+                        build_id = str(uuid.uuid4())
+                        build_container.apply_async(args=[client_id, params["definition_id"],
+                                                          build_id, params["to_format"],
+                                                          params["container_name"],
+                                                          str(uuid.uuid4())])
+                        return build_id
+                else:
+                    abort(400, "No definition DB entry for {}".format(params["definition_id"]))
             else:
                 abort(400, "Missing {} parameters".format(required_params.difference(set(params.keys()))))
         elif request.method == "GET":
-            build_entry = select_by_column(create_connection(), "build",
-                                           container_owner=client_id,
+            build_entry = select_by_column("build", container_owner=client_id,
                                            build_id=request.json["build_id"])
             if build_entry is not None and len(build_entry) == 1:
                 return build_entry[0]
@@ -106,32 +105,35 @@ def pull():
     token = str.replace(str(token), 'Bearer ', '')
     conf_app = ConfidentialAppAuthClient(os.environ["GL_CLIENT"], os.environ["GL_CLIENT_SECRET"])
     intro_obj = conf_app.oauth2_token_introspect(token)
-
     if "client_id" in intro_obj:
         client_id = intro_obj["client_id"]
         params = request.json
         if "build_id" in params:
-            try:
-                file_path = pull_container(client_id, params["build_id"])
-                response = send_file(file_path)
-                if os.path.exists(file_path):
-                    os.remove(file_path)
+            build_id = params["build_id"]
+            build_entry = select_by_column("build", build_id=build_id)
+            if build_entry is not None and len(build_entry) == 1:
+                build_entry = build_entry[0]
 
+                if build_entry["container_owner"] != client_id:
+                    abort(400, "You do not have access to this definition file")
+            else:
+                abort(400, "Invalid build ID")
+
+            try:
+                file_name = pull_container(build_entry)
+                response = send_file(os.path.basename(file_name))
+                if os.path.exists(file_name):
+                    os.remove(file_name)
                 return response
             except Exception as e:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                print("Exception: {}".format(e))
-                return "Failed"
+                file_name = os.path.join("app/",
+                                         build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif"))
+                if os.path.exists(file_name):
+                    os.remove(file_name)
+                print(e)
+                abort(400, "Failed to pull {}".format(build_id))
         else:
-            return "Failed"
+            abort(400, "No build ID")
     else:
         abort(400, "Failed to authenticate user")
-
-
-# if __name__ == "__main__":
-#     logging.basicConfig(filename='app.log',
-#                         filemode='w',
-#                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
-#     app.run(debug=True, threaded=True)
 
