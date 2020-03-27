@@ -22,15 +22,11 @@ def pull_s3_dir(definition_id):
     Parameter:
     definition_id (str): Name of id to pull files from.
     """
-    try:
-        bucket = boto3.resource('s3').Bucket("xtract-container-service")
-        for object in bucket.objects.filter(Prefix=definition_id):
-            if not os.path.exists("./" + os.path.dirname(object.key)):
-                os.makedirs("./" + os.path.dirname(object.key))
-            bucket.download_file(object.key, "./" + object.key)
-    except Exception as e:
-        print(e)
-        raise e
+    bucket = boto3.resource('s3').Bucket("xtract-container-service")
+    for object in bucket.objects.filter(Prefix=definition_id):
+        if not os.path.exists("./" + os.path.dirname(object.key)):
+            os.makedirs("./" + os.path.dirname(object.key))
+        bucket.download_file(object.key, "./" + object.key)
 
 
 def ecr_login():
@@ -60,26 +56,23 @@ def push_to_ecr(docker_image, build_id, image_name):
     Return:
     (str): ID of pushed Docker image or None if the push fails.
     """
+    ecr_client = boto3.client("ecr")
+
     try:
-        ecr_client = boto3.client("ecr")
-        try:
-            ecr_client.describe_repositories(repositoryNames=[build_id])
-        except:
-            ecr_client.create_repository(repositoryName=build_id)
-        registry = ecr_login()[8:] + "/" + build_id
-        docker_client = docker.from_env()
-        docker_image.tag(registry,
-                         tag=image_name)
-        response = docker_client.images.push(registry, stream=False)
-        # TODO Find a better way to check if the image was successfully pushed
-        if "sha256" in response:
-            return docker_image.id[7:]
-        else:
-            print("FAILED: {}".format(response))
-            raise ValueError("Failed to push")
-    except Exception as e:
-        print("EXCEPTION: {}".format(e))
-        return None
+        ecr_client.describe_repositories(repositoryNames=[build_id])
+    except:
+        ecr_client.create_repository(repositoryName=build_id)
+
+    registry = ecr_login()[8:] + "/" + build_id
+    docker_client = docker.from_env()
+    docker_image.tag(registry,
+                     tag=image_name)
+    response = docker_client.images.push(registry, stream=False)
+    # TODO Find a better way to check if the image was successfully pushed
+    if "sha256" in response:
+        return docker_image.id[7:]
+    else:
+        raise ValueError("Failed to push")
 
 
 def pull_container(build_id):
@@ -91,28 +84,24 @@ def pull_container(build_id):
     Return:
     (file obj. gen.): File generator for the Docker container.
     """
-    try:
-        build_entry = select_by_column("build", build_id=build_id)
-        if build_entry is not None and len(build_entry) == 1:
-            build_entry = build_entry[0]
-        else:
-            raise ValueError("Invalid build ID")
+    build_entry = select_by_column("build", build_id=build_id)
 
-        if build_entry["container_type"] == "docker":
-            registry = ecr_login()
-            docker_client = docker.from_env()
-            image = docker_client.images.pull(registry[8:], tag=build_entry["container_name"])
-            return image.save(chunk_size=10485760)
-        else:
-            return "pass"
+    if build_entry is not None and len(build_entry) == 1:
+        build_entry = build_entry[0]
+    else:
+        raise ValueError("Invalid build ID")
 
-    except Exception as e:
-        print(e)
-        logging.error("Exception", exc_info=True)
+    if build_entry["container_type"] == "docker":
+        registry = ecr_login()
+        docker_client = docker.from_env()
+        image = docker_client.images.pull(registry[8:], tag=build_entry["container_name"])
+        return image.save(chunk_size=10485760)
+    else:
+        return "pass"
 
 
 def build_to_singularity(definition_entry, container_location):
-    """Builds a Singularity container from a Dockerfile0 or Singularity file
+    """Builds a Singularity container from a Dockerfile or Singularity file
     within the definition db.
 
     Parameters:
@@ -123,20 +112,16 @@ def build_to_singularity(definition_entry, container_location):
     container_location: Returns the location of the Singularity container or None if it
     fails to save.
     """
-    try:
-        definition_id = definition_entry["definition_id"]
-        pull_s3_dir(definition_id)
-        Client.load("./" + definition_id)
-        Client.build(image=os.path.join("./", container_location))
-        shutil.rmtree("./" + definition_id)
-        #TODO Find a better way to error check
-        if os.path.exists(container_location):
-            logging.info("Successfully built {}".format(container_location))
-            return container_location
-        else:
-            raise ValueError("Failed to build singularity container")
-    except Exception as e:
-        print(e)
+    definition_id = definition_entry["definition_id"]
+    pull_s3_dir(definition_id)
+    Client.load("./" + definition_id)
+    Client.build(image=os.path.join("./", container_location))
+    shutil.rmtree("./" + definition_id)
+    #TODO Find a better way to error check
+    if os.path.exists(container_location):
+        logging.info("Successfully built {}".format(container_location))
+        return container_location
+    else:
         return None
 
 
@@ -150,25 +135,19 @@ def build_to_docker(definition_entry, image_name):
     Return:
     image (Image obj.): Docker image object or None if the container fails to build.
     """
-    try:
-        definition_id = definition_entry["definition_id"]
-        pull_s3_dir(definition_id)
-        try:
-            docker_client = docker.from_env()
-            image = docker_client.images.build(path="./{}".format(definition_id),
-                                               tag=image_name, rm=True, forcerm=True)
-            shutil.rmtree("./" + definition_id)
-        except Exception as e:
-            print(e)
-            shutil.rmtree("./" + definition_id)
-            logging.error("Exception", exc_info=True)
-            raise e
+    definition_id = definition_entry["definition_id"]
+    pull_s3_dir(definition_id)
 
-        logging.info("Successfully build {}".format(image_name))
+    try:
+        docker_client = docker.from_env()
+        image = docker_client.images.build(path="./{}".format(definition_id),
+                                           tag=image_name, rm=True, forcerm=True)
         return image
-    except Exception as e:
-        print(e)
+    except:
         return None
+    finally:
+        if os.path.exists(definition_id):
+            shutil.rmtree("./" + definition_id)
 
 
 #TODO: Find a better way to name converted Singularity definition files
@@ -279,10 +258,10 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
     try:
         print("{}: {}".format(build_id, container_name))
         assert to_format in ["docker", "singularity"], "{} is not a valid container format".format(to_format)
+
         definition_entry = select_by_column("definition", definition_id=definition_id)
         if definition_entry is not None and len(definition_entry) == 1:
             definition_entry = definition_entry[0]
-
             if definition_entry["definition_owner"] != owner_id:
                 return "You do not have access to this definition file"
         else:
