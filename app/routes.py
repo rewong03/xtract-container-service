@@ -1,14 +1,11 @@
 import os
-import threading
-import time
+import uuid
 import boto3
 from app import app
 from flask import request, send_file, abort
 from globus_sdk import ConfidentialAppAuthClient
-from app.pg_utils import *
+from app.pg_utils import create_table_entry, select_by_column
 from app.container_handler import build_container, pull_container
-from app.sqs_queue_utils import *
-
 
 
 @app.route('/')
@@ -125,11 +122,4 @@ def pull():
             return "Failed"
     else:
         abort(400, "Failed to authenticate user")
-
-
-# if __name__ == "__main__":
-#     logging.basicConfig(filename='app.log',
-#                         filemode='w',
-#                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
-#     app.run(debug=True, threaded=True)
 

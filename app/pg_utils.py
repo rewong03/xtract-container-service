@@ -1,5 +1,4 @@
 import logging
-import uuid
 import psycopg2
 import psycopg2.extras
 from configparser import ConfigParser
@@ -60,45 +59,37 @@ def create_connection(config_file='database.ini'):
     Return:
     conn (Connection Obj.): Connection object to database.
     """
-    try:
-        conn = psycopg2.connect(**config(config_file=config_file))
-        logging.info("Connection to database succeeded")
+    conn = psycopg2.connect(**config(config_file=config_file))
+    logging.info("Connection to database succeeded")
 
-        return conn
-
-    except Exception as e:
-        logging.error(e)
+    return conn
 
 
 def prep_database():
     """Creates tables containing Container and Build information
     using the conn object.
     """
-    try:
-        conn = create_connection()
-        cur = conn.cursor()
-        definition_table_columns = []
-        build_table_columns = []
+    conn = create_connection()
+    cur = conn.cursor()
+    definition_table_columns = []
+    build_table_columns = []
 
-        for column in DEFINITION_TABLE:
-            definition_table_columns.append(column + " " + DEFINITION_TABLE[column])
+    for column in DEFINITION_TABLE:
+        definition_table_columns.append(column + " " + DEFINITION_TABLE[column])
 
-        for column in BUILD_TABLE:
-            build_table_columns.append(column + " " + BUILD_TABLE[column])
+    for column in BUILD_TABLE:
+        build_table_columns.append(column + " " + BUILD_TABLE[column])
 
-        definition_command = """CREATE TABLE definition ({})""".format(", ".join(definition_table_columns))
-        build_command = """CREATE TABLE build ({})""".format(", ".join(build_table_columns))
+    definition_command = """CREATE TABLE definition ({})""".format(", ".join(definition_table_columns))
+    build_command = """CREATE TABLE build ({})""".format(", ".join(build_table_columns))
 
-        cur.execute(definition_command)
-        cur.execute(build_command)
+    cur.execute(definition_command)
+    cur.execute(build_command)
 
-        cur.close()
-        conn.commit()
+    cur.close()
+    conn.commit()
 
-        logging.info("Succesfully created tables")
-
-    except Exception as e:
-        logging.error("Exception", exc_info=True)
+    logging.info("Succesfully created tables")
 
 
 def create_table_entry(table_name, **columns):
@@ -111,37 +102,33 @@ def create_table_entry(table_name, **columns):
     of the column to write to. E.g. id="1234a". If no value
     for a column is passed then None is defaulted.
     """
-    try:
-        assert table_name in ["definition", "build"], "Not a valid table"
+    assert table_name in ["definition", "build"], "Not a valid table"
 
-        conn = create_connection()
-        entry = []
+    conn = create_connection()
+    entry = []
 
-        if table_name == "definition":
-            table = DEFINITION_TABLE
-        elif table_name == "build":
-            table = BUILD_TABLE
+    if table_name == "definition":
+        table = DEFINITION_TABLE
+    elif table_name == "build":
+        table = BUILD_TABLE
 
-        assert set(list(columns.keys())) <= set(table), "Column does not exist in table"
+    assert set(list(columns.keys())) <= set(table), "Column does not exist in table"
 
-        statement = """INSERT INTO {} VALUES {}""".format(table_name,
-                                                          "(" + ", ".join(["%s"] * len(table)) + ")")
+    statement = """INSERT INTO {} VALUES {}""".format(table_name,
+                                                      "(" + ", ".join(["%s"] * len(table)) + ")")
 
-        for column in table:
-            if column in columns:
-                entry.append(columns[column])
-            else:
-                entry.append(None)
+    for column in table:
+        if column in columns:
+            entry.append(columns[column])
+        else:
+            entry.append(None)
 
-        entry = tuple(entry)
+    entry = tuple(entry)
 
-        cur = conn.cursor()
-        cur.execute(statement, entry)
-        conn.commit()
-        logging.info("Successfully created entry to {} table".format(table_name))
-
-    except Exception as e:
-        logging.error("Exception", exc_info=True)
+    cur = conn.cursor()
+    cur.execute(statement, entry)
+    conn.commit()
+    logging.info("Successfully created entry to {} table".format(table_name))
 
 
 def update_table_entry(table_name, id, **columns):
@@ -154,33 +141,30 @@ def update_table_entry(table_name, id, **columns):
     **columns (str): The value to write passed with the name
     of the column to write to. E.g. recipe="1234a".
     """
-    try:
-        assert table_name in ["definition", "build"], "Not a valid table"
+    assert table_name in ["definition", "build"], "Not a valid table"
 
-        values = list(columns.values())
-        columns = list(columns.keys())
+    values = list(columns.values())
+    columns = list(columns.keys())
 
-        if table_name == "definition":
-            table = DEFINITION_TABLE
-        elif table_name == "build":
-            table = BUILD_TABLE
+    if table_name == "definition":
+        table = DEFINITION_TABLE
+    elif table_name == "build":
+        table = BUILD_TABLE
 
-        assert set(columns) <= set(table), "Column does not exist in table"
+    assert set(columns) <= set(table), "Column does not exist in table"
 
-        columns = " = %s,".join(columns) + " = %s"
-        values.append(id)
+    columns = " = %s,".join(columns) + " = %s"
+    values.append(id)
 
-        statement = """UPDATE {}
-                    SET {}
-                    WHERE {}_id = %s""".format(table_name, columns, table_name)
-        conn = create_connection()
-        cur = conn.cursor()
-        cur.execute(statement, tuple(values))
-        conn.commit()
-        logging.info("Successfully inserted %s into entry with id %s",
-                     values[:-1], id)
-    except Exception as e:
-        logging.error("Exception", exc_info=True)
+    statement = """UPDATE {}
+                SET {}
+                WHERE {}_id = %s""".format(table_name, columns, table_name)
+    conn = create_connection()
+    cur = conn.cursor()
+    cur.execute(statement, tuple(values))
+    conn.commit()
+    logging.info("Successfully inserted %s into entry with id %s",
+                 values[:-1], id)
 
 
 def select_all_rows(table_name):
@@ -227,33 +211,29 @@ def search_array(table_name, array, value):
     Return:
     rows (list(dict)): List of rows that match the values.
     """
-    try:
-        assert table_name in ["definition", "build"], "Not a valid table"
+    assert table_name in ["definition", "build"], "Not a valid table"
 
-        if table_name == "definition":
-            table = DEFINITION_TABLE
-        elif table_name == "build":
-            table = BUILD_TABLE
+    if table_name == "definition":
+        table = DEFINITION_TABLE
+    elif table_name == "build":
+        table = BUILD_TABLE
 
-        assert array in table, "Array does not exist"
+    assert array in table, "Array does not exist"
 
-        rows = []
+    rows = []
 
-        conn = create_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM {} WHERE '{}'=ANY({})".format(table_name, value, array))
+    conn = create_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM {} WHERE '{}'=ANY({})".format(table_name, value, array))
 
-        results = cur.fetchall()
+    results = cur.fetchall()
 
-        for result in results:
-            rows.append(dict(zip(table, result)))
+    for result in results:
+        rows.append(dict(zip(table, result)))
 
-        logging.info("Successfully queried {} array".format(array))
+    logging.info("Successfully queried {} array".format(array))
 
-        return rows
-
-    except Exception as e:
-        logging.error("Exception", exc_info=True)
+    return rows
 
 
 def select_by_column(table_name, **columns):
@@ -268,43 +248,33 @@ def select_by_column(table_name, **columns):
     Return:
     rows (list(dict)): List of rows that match the values.
     """
-    try:
-        assert table_name in ["definition", "build"], "Not a valid table"
+    assert table_name in ["definition", "build"], "Not a valid table"
 
-        if table_name == "definition":
-            table = DEFINITION_TABLE
-        elif table_name == "build":
-            table = BUILD_TABLE
+    if table_name == "definition":
+        table = DEFINITION_TABLE
+    elif table_name == "build":
+        table = BUILD_TABLE
 
-        values = list(columns.values())
-        columns = list(columns.keys())
+    values = list(columns.values())
+    columns = list(columns.keys())
 
-        assert set(columns) <= set(table), "Column does not exist in table"
-        assert len(values) == len(columns), "Not enough values to fill columns with"
+    assert set(columns) <= set(table), "Column does not exist in table"
+    assert len(values) == len(columns), "Not enough values to fill columns with"
 
-        rows = []
+    rows = []
 
-        conn = create_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM {} WHERE {}".format(table_name,
-                                                       "=%s AND ".join(columns) + "=%s"),
-                    values)
+    conn = create_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM {} WHERE {}".format(table_name,
+                                                   "=%s AND ".join(columns) + "=%s"),
+                values)
 
-        results = cur.fetchall()
+    results = cur.fetchall()
 
-        for result in results:
-            rows.append(dict(zip(table, result)))
+    for result in results:
+        rows.append(dict(zip(table, result)))
 
-        logging.info("Successfully queried {} columns".format(columns))
+    logging.info("Successfully queried {} columns".format(columns))
 
-        return rows
+    return rows
 
-    except Exception as e:
-        logging.error("Exception", exc_info=True)
-
-
-if __name__ == "__main__":
-    logging.basicConfig(filename='app.log', filemode='w',
-                        level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
-
-    print("Success!")

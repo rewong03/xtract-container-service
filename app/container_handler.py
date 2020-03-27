@@ -3,7 +3,6 @@ import os
 import logging
 import subprocess
 import shutil
-import tempfile
 import time
 import uuid
 import boto3
@@ -13,7 +12,7 @@ from spython.main import Client
 from spython.main.parse.parsers import get_parser
 from spython.main.parse.writers import get_writer
 from app import celery_app
-from app.pg_utils import *
+from app.pg_utils import definition_schema, build_schema, create_table_entry, update_table_entry, select_by_column
 
 
 def pull_s3_dir(definition_id):
