@@ -4,15 +4,22 @@ import logging
 import subprocess
 import shutil
 import time
+import urllib
 import uuid
 import boto3
 import docker
 import namegenerator
+from celery import Celery
+import botocore.session
 from spython.main import Client
 from spython.main.parse.parsers import get_parser
 from spython.main.parse.writers import get_writer
-from app import celery_app
-from app.pg_utils import definition_schema, build_schema, create_table_entry, update_table_entry, select_by_column
+from pg_utils import definition_schema, build_schema, create_table_entry, update_table_entry, select_by_column
+
+
+aws_credentials = botocore.session.get_session().get_credentials()
+celery_app = Celery("application", broker="sqs://{}:{}@".format(urllib.parse.quote(aws_credentials.access_key, safe=''),
+                                                           urllib.parse.quote(aws_credentials.secret_key, safe='')))
 
 
 def pull_s3_dir(definition_id):
@@ -348,7 +355,7 @@ def pull_container(build_entry):
     (file obj.): File object of container.
     """
     build_id = build_entry["build_id"]
-    file_name = os.path.join("app/",
+    file_name = os.path.join("application/",
                              build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif"))
 
     try:

@@ -1,21 +1,21 @@
 import os
 import uuid
 import boto3
-from app import app
+from application import application
 from flask import request, send_file, abort
 from globus_sdk import ConfidentialAppAuthClient
-from app.pg_utils import create_table_entry, select_by_column
-from app.container_handler import build_container, pull_container
+from application.pg_utils import create_table_entry, select_by_column
+from application.container_handler import build_container, pull_container
 
 
-@app.route('/')
+@application.route('/')
 def index():
     return "Hello, there!"
 
 
 #TODO: Almost every function in container_handler and pg_utils logs and catches errors
 # which makes it hard to tell if something failed
-@app.route('/upload_def_file', methods=["POST"])
+@application.route('/upload_def_file', methods=["POST"])
 def upload_file():
     if 'Authorization' not in request.headers:
         abort(401, 'You must be logged in to perform this function.')
@@ -53,7 +53,7 @@ def upload_file():
         abort(400, "Failed to authenticate user")
 
 
-@app.route('/build', methods=["POST", "GET"])
+@application.route('/build', methods=["POST", "GET"])
 def build():
     if 'Authorization' not in request.headers:
         abort(401, "You must be logged in to perform this function.")
@@ -96,7 +96,7 @@ def build():
         abort(400, "Failed to authenticate user")
 
 
-@app.route('/pull', methods=["GET"])
+@application.route('/pull', methods=["GET"])
 def pull():
     if 'Authorization' not in request.headers:
         abort(401, 'You must be logged in to perform this function.')
@@ -126,7 +126,7 @@ def pull():
                     os.remove(file_name)
                 return response
             except Exception as e:
-                file_name = os.path.join("app/",
+                file_name = os.path.join("application/",
                                          build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif"))
                 if os.path.exists(file_name):
                     os.remove(file_name)
@@ -136,4 +136,5 @@ def pull():
             abort(400, "No build ID")
     else:
         abort(400, "Failed to authenticate user")
+
 

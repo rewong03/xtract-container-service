@@ -1,9 +1,9 @@
-from app import app
+from application import application
 import logging
 
 if __name__ == "__main__":
-    logging.basicConfig(filename='app.log',
+    logging.basicConfig(filename='application.log',
                         filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
     logging.info("cool")
-    app.run(debug=True)
+    application.run(debug=True)
