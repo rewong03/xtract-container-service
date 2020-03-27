@@ -1,18 +1,13 @@
-import botocore.session
-from flask import Flask
-from celery import Celery
-
-
-application = Flask(__name__)
-
-
 import os
 import uuid
 import boto3
-from flask import request, send_file, abort
+from flask import Flask, request, send_file, abort
 from globus_sdk import ConfidentialAppAuthClient
 from pg_utils import create_table_entry, select_by_column
 from container_handler import build_container, pull_container
+
+
+application = Flask(__name__)
 
 
 @application.route('/')

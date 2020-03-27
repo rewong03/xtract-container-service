@@ -1,16 +1,16 @@
 import datetime
-import os
 import logging
-import subprocess
+import os
 import shutil
+import subprocess
 import time
 import urllib
 import uuid
 import boto3
+import botocore.session
 import docker
 import namegenerator
 from celery import Celery
-import botocore.session
 from spython.main import Client
 from spython.main.parse.parsers import get_parser
 from spython.main.parse.writers import get_writer
@@ -19,7 +19,7 @@ from pg_utils import definition_schema, build_schema, create_table_entry, update
 
 aws_credentials = botocore.session.get_session().get_credentials()
 celery_app = Celery("application", broker="sqs://{}:{}@".format(urllib.parse.quote(aws_credentials.access_key, safe=''),
-                                                           urllib.parse.quote(aws_credentials.secret_key, safe='')))
+                                                                urllib.parse.quote(aws_credentials.secret_key, safe='')))
 
 
 def pull_s3_dir(definition_id):

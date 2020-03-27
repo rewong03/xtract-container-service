@@ -1,12 +1,18 @@
-docker
 boto3
-psycopg2-binary
-psycopg2
-spython
-namegenerator
-globus_sdk
+botocore
+celery
+docker
 fair-research-login
 flask
 gevent
-celery
+globus_sdk
+namegenerator
+psycopg2-binary
+psycopg2
+spython
+
+
+
+
+
 

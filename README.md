@@ -45,7 +45,7 @@ export GL_CLIENT_SECRET=YOUR_GL_CLIENT_SECRET
 ```
 Next, save the path of the flask app. as an environment variable:
 ```
-export FLASK_APP=xtract-container-service-main.py
+export FLASK_APP=application.py
 ```
 Then, start the application:
 ```
@@ -53,7 +53,7 @@ flask run
 ```
 Finally, in a second terminal, start the Celery worker:
 ```
-celery -A app.celery_app worker --pool=gevent --concurrency=YOUR_MAX_THREADS
+celery -A container_handler.celery_app worker --pool=gevent --concurrency=YOUR_MAX_THREADS
 ```
 
 ## Interacting with the server
