@@ -38,9 +38,8 @@ def upload_file():
             abort(400, "No file selected")
         if file:
             filename = file.filename
-            conn = create_connection()
             definition_id = str(uuid.uuid4())
-            create_table_entry(conn, "definition",
+            create_table_entry("definition",
                                definition_id=definition_id,
                                definition_type="docker" if filename == "Dockerfile" else "singularity",
                                definition_name=filename,
@@ -86,8 +85,7 @@ def build():
             else:
                 abort(400, "Missing {} parameters".format(required_params.difference(set(params.keys()))))
         elif request.method == "GET":
-            build_entry = select_by_column(create_connection(), "build",
-                                           container_owner=client_id,
+            build_entry = select_by_column("build", container_owner=client_id,
                                            build_id=request.json["build_id"])
             if build_entry is not None and len(build_entry) == 1:
                 return build_entry[0]

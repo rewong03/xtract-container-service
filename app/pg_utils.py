@@ -70,14 +70,12 @@ def create_connection(config_file='database.ini'):
         logging.error(e)
 
 
-def prep_database(conn):
+def prep_database():
     """Creates tables containing Container and Build information
     using the conn object.
-
-    Parameter:
-    conn (Connection Obj.): Connection object to database.
     """
     try:
+        conn = create_connection()
         cur = conn.cursor()
         definition_table_columns = []
         build_table_columns = []
@@ -103,11 +101,10 @@ def prep_database(conn):
         logging.error("Exception", exc_info=True)
 
 
-def create_table_entry(conn, table_name, **columns):
+def create_table_entry(table_name, **columns):
     """Creates a new entry in a table.
 
     Parameters:
-    conn (Connection Obj.): Connection object to db_file.
     table_name (str): Name of table to create an entry to. Currently
     either "definition" or "build".
     **columns (str): The value to write passed with the name
@@ -115,8 +112,10 @@ def create_table_entry(conn, table_name, **columns):
     for a column is passed then None is defaulted.
     """
     try:
-        entry = []
         assert table_name in ["definition", "build"], "Not a valid table"
+
+        conn = create_connection()
+        entry = []
 
         if table_name == "definition":
             table = DEFINITION_TABLE
@@ -145,11 +144,10 @@ def create_table_entry(conn, table_name, **columns):
         logging.error("Exception", exc_info=True)
 
 
-def update_table_entry(conn, table_name, id, **columns):
+def update_table_entry(table_name, id, **columns):
     """Updates an existing table.
 
     Parameters:
-    conn (Connection Obj.): Connection object to db_file.
     table_name (str): Name of table to create an entry to. Currently
     either "definition" or "build".
     id (str): ID of the entry to change.
@@ -175,6 +173,7 @@ def update_table_entry(conn, table_name, id, **columns):
         statement = """UPDATE {}
                     SET {}
                     WHERE {}_id = %s""".format(table_name, columns, table_name)
+        conn = create_connection()
         cur = conn.cursor()
         cur.execute(statement, tuple(values))
         conn.commit()
@@ -184,11 +183,10 @@ def update_table_entry(conn, table_name, id, **columns):
         logging.error("Exception", exc_info=True)
 
 
-def select_all_rows(conn, table_name):
+def select_all_rows(table_name):
     """Returns all rows from containers table.
 
     Parameters:
-    conn (Connection Obj.): Connection object to db_file.
     table_name (str): Name of table to create an entry to. Currently
     either "definition" or "build".
 
@@ -205,6 +203,7 @@ def select_all_rows(conn, table_name):
 
     rows = []
 
+    conn = create_connection()
     cur = conn.cursor()
     cur.execute("SELECT * FROM {}".format(table_name))
 
@@ -216,11 +215,10 @@ def select_all_rows(conn, table_name):
     return rows
 
 
-def search_array(conn, table_name, array, value):
+def search_array(table_name, array, value):
     """Searches arrays for a value.
 
     Parameters:
-    conn (Connection Obj.): Connection object to db_file.
     table_name (str): Name of table to create an entry to. Currently
     either "definition" or "build".
     array (str): Name of array column to search.
@@ -241,6 +239,7 @@ def search_array(conn, table_name, array, value):
 
         rows = []
 
+        conn = create_connection()
         cur = conn.cursor()
         cur.execute("SELECT * FROM {} WHERE '{}'=ANY({})".format(table_name, value, array))
 
@@ -257,11 +256,10 @@ def search_array(conn, table_name, array, value):
         logging.error("Exception", exc_info=True)
 
 
-def select_by_column(conn, table_name, **columns):
+def select_by_column(table_name, **columns):
     """Searches table by values for columns.
 
     Parameters:
-    conn (Connection Obj.): Connection object to db_file.
     table_name (str): Name of table to create an entry to. Currently
     either "definition" or "build".
     **columns (str): The value to search passed with the value
@@ -286,6 +284,7 @@ def select_by_column(conn, table_name, **columns):
 
         rows = []
 
+        conn = create_connection()
         cur = conn.cursor()
         cur.execute("SELECT * FROM {} WHERE {}".format(table_name,
                                                        "=%s AND ".join(columns) + "=%s"),
@@ -307,21 +306,5 @@ def select_by_column(conn, table_name, **columns):
 if __name__ == "__main__":
     logging.basicConfig(filename='app.log', filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
-    # conn = create_connection()
-    # prep_database(conn)
-    #
-    # id = str(uuid.uuid4())
-    # create_table_entry(conn, "container",
-    #                    container_id=id,
-    #                    recipe_type="singularity",
-    #                    container_name="good-singularity",
-    #                    container_version=1,
-    #                    s3_location=str(id))
-    # import boto3
-    #
-    # s3 = boto3.client('s3')
-    # with open("/Users/ryan/Documents/CS/CDAC/singularity-vm/xtract-container-service/good.def", 'rb') as f:
-    #     s3.upload_fileobj(f, 'xtract-container-service',
-    #                       '{}/good.def'.format(id))
 
     print("Success!")

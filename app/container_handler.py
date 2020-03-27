@@ -93,8 +93,7 @@ def pull_container(build_id):
     (file obj. gen.): File generator for the Docker container.
     """
     try:
-        build_entry = select_by_column(create_connection(), "build",
-                                       build_id=build_id)
+        build_entry = select_by_column("build", build_id=build_id)
         if build_entry is not None and len(build_entry) == 1:
             build_entry = build_entry[0]
         else:
@@ -183,8 +182,7 @@ def convert_definition_file(definition_id, singularity_def_name=None):
     from Dockerfile0 to Singularity definition file.
     """
     try:
-        definition_entry = select_by_column(create_connection(), "definition",
-                                            definition_id=definition_id)
+        definition_entry = select_by_column("definition", definition_id=definition_id)
 
         if len(definition_entry) > 0:
             definition_entry = definition_entry[0]
@@ -244,8 +242,7 @@ def convert_definition_file(definition_id, singularity_def_name=None):
         db_entry["post_containers"] = definition_entry["post_containers"]
         db_entry["replaces_container"] = definition_entry["replaces_container"]
         db_entry["s3_location"] = str(new_definition_id)
-        create_table_entry(create_connection(), "container",
-                           **db_entry)
+        create_table_entry("container", **db_entry)
 
         logging.info("Successfully converted %s %s definition file to %s %s definition file",
                      os.path.basename(input_file),
@@ -283,9 +280,7 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
     try:
         print("{}: {}".format(build_id, container_name))
         assert to_format in ["docker", "singularity"], "{} is not a valid container format".format(to_format)
-        definition_entry = select_by_column(create_connection(),
-                                            "definition",
-                                            definition_id=definition_id)
+        definition_entry = select_by_column("definition", definition_id=definition_id)
         if definition_entry is not None and len(definition_entry) == 1:
             definition_entry = definition_entry[0]
 
@@ -293,15 +288,12 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                 return "You do not have access to this definition file"
         else:
             raise ValueError("No db entry for {}".format(definition_id))
-        build_entry = select_by_column(create_connection(), "build",
-                                       definition_id=definition_id,
-                                       container_type=to_format)
+        build_entry = select_by_column("build", definition_id=definition_id, container_type=to_format)
         if build_entry is not None and len(build_entry) == 1:
             build_entry = build_entry[0]
             build_id = build_entry["build_id"]
             build_entry["build_status"] = "pending"
-            update_table_entry(create_connection(), "build",
-                               build_id, **build_entry)
+            update_table_entry("build", build_id, **build_entry)
         else:
             build_entry = build_schema
             build_entry["build_id"] = build_id if build_id is not None else str(uuid.uuid4())
@@ -310,18 +302,15 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
             build_entry["container_type"] = to_format
             build_entry["container_owner"] = owner_id
             build_entry["build_status"] = "pending"
-            create_table_entry(create_connection(), "build",
-                               **build_entry)
+            create_table_entry("build", **build_entry)
 
         logging.info("Created build entry for {}".format(build_id))
 
         if definition_entry["definition_type"] == "singularity" and to_format == "docker":
-            update_table_entry(create_connection(), "build",
-                               build_id, **{"build_status": "error"})
+            update_table_entry("build", build_id, **{"build_status": "error"})
             raise ValueError("Can't build Docker container from Singularity file")
 
-        update_table_entry(create_connection(), "build",
-                           build_id, **{"build_status": "building"})
+        update_table_entry("build", build_id, **{"build_status": "building"})
         if to_format == "docker":
             # time.sleep(10)
             logging.info("{} {} {} {} {}".format(owner_id, definition_id, build_id, to_format, container_name))
@@ -347,11 +336,10 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                             container_size = image["Size"]
                             break
                 print("SETTING TO PUSHING THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
-                update_table_entry(create_connection(), "build",
-                                   build_id, **{"build_status": "pushing",
-                                                               "build_time": build_time,
-                                                               "last_built": last_built,
-                                                               "container_size": container_size})
+                update_table_entry("build", build_id, **{"build_status": "pushing",
+                                                         "build_time": build_time,
+                                                         "last_built": last_built,
+                                                         "container_size": container_size})
                 t0 = time.time()
                 logging.info("Pushing {}".format(build_id))
                 response = push_to_ecr(docker_image, build_id,
@@ -364,22 +352,19 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                 print("!!!!!!!")
                 if response is not None:
                     print("UPDATING TO SUCCESS THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
-                    update_table_entry(create_connection(), "build",
-                                       build_id, **{"build_status": "success"})
+                    update_table_entry("build", build_id, **{"build_status": "success"})
                     docker_client.images.remove(response, force=True)
                     print("FINISHED UPDSTING THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
                     return build_id
                 else:
                     print("UPDATING TO FAILED THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
-                    update_table_entry(create_connection(), "build",
-                                       build_id, **{"build_status": "failed"})
+                    update_table_entry("build", build_id, **{"build_status": "failed"})
                     docker.from_env().images.remove(container_name, force=True)
                     print("FINISHED UPDATINGN THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
                     raise ValueError("Failed to push")
             else:
                 print("THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
-                update_table_entry(create_connection(), "build",
-                                   build_id, **{"build_status": "failed"})
+                update_table_entry("build", build_id, **{"build_status": "failed"})
                 print("THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
                 raise ValueError("Failed to build docker container")
 
@@ -388,8 +373,7 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                 print("BUILDING {}".format(container_name))
                 singularity_image = build_to_singularity(definition_entry, container_name)
             else:
-                update_table_entry(create_connection(), "build",
-                                   build_id, **{"build_status": "failed"})
+                update_table_entry("build", build_id, **{"build_status": "failed"})
                 raise ValueError("Invalid Singularity container name")
             if singularity_image:
                 print("DONE BUILDING: {}".format(container_name))
@@ -398,19 +382,17 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                 image_size = os.path.getsize(container_name)
 
                 build_entry["build_status"] = "pushing"
-                update_table_entry(create_connection(), "build",
-                                   build_id, **{"build_status": "pushing",
-                                                "build_time": build_time,
-                                                "last_built": last_built,
-                                                "container_size": image_size})
+                update_table_entry("build",build_id, **{"build_status": "pushing",
+                                                        "build_time": build_time,
+                                                        "last_built": last_built,
+                                                        "container_size": image_size})
                 print("Pushing: {}".format(container_name))
                 s3 = boto3.client("s3")
                 s3.upload_fileobj(open(singularity_image, 'rb'),
                                   "xtract-container-service",
                                   "{}/{}".format(build_id,
                                                  os.path.basename(container_name)))
-                update_table_entry(create_connection(), "build",
-                                   build_id, **{"build_status": "success"})
+                update_table_entry("build", build_id, **{"build_status": "success"})
                 os.remove(container_name)
                 print("DONE pushing: {} to {}/{}".format(container_name, build_id,
                                                          os.path.basename(container_name)))
@@ -418,21 +400,17 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
             else:
                 print("Failed building: {}".format(container_name))
                 build_entry["build_status"] = "failed"
-                update_table_entry(create_connection(), "build",
-                                   build_id, **{"build_status": "failed"})
+                update_table_entry("build",build_id, **{"build_status": "failed"})
                 raise ValueError("Failed to build singularity container")
 
     except Exception as e:
         print(e)
         logging.error("Exception", exc_info=True)
-        build_entry = select_by_column(create_connection(), "build",
-                                       definition_id=definition_id,
-                                       container_type=to_format)
+        build_entry = select_by_column("build", definition_id=definition_id, container_type=to_format)
         if build_entry is not None and len(build_entry) == 1:
             build_entry = build_entry[0]
             build_entry["build_status"] = "failed"
-            update_table_entry(create_connection(), "build",
-                               build_entry["build_id"], **{"build_status": "failed"})
+            update_table_entry("build", build_entry["build_id"], **{"build_status": "failed"})
         self.retry()
         return "Failed"
 
@@ -449,8 +427,7 @@ def pull_container(owner_id, build_id):
     (file obj.): File object of container.
     """
     try:
-        build_entry = select_by_column(create_connection(), "build",
-                                       build_id=build_id)
+        build_entry = select_by_column("build",build_id=build_id)
         if build_entry is not None and len(build_entry) == 1:
             build_entry = build_entry[0]
 
@@ -485,15 +462,12 @@ def pull_container(owner_id, build_id):
                 print(e)
                 return "Failed"
 
-
     except Exception as e:
         print("Exception: {}".format(e))
         logging.error("Exception", exc_info=True)
-
 
 
 if __name__ == "__main__":
     logging.basicConfig(filename='app.log',
                         filemode='w',
                         level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
-    # build_container("d8959909-7efb-4319-813c-16403d602eed", "singularity", "lmao.sif")
