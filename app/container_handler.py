@@ -259,13 +259,7 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
         print("{}: {}".format(build_id, container_name))
         assert to_format in ["docker", "singularity"], "{} is not a valid container format".format(to_format)
 
-        definition_entry = select_by_column("definition", definition_id=definition_id)
-        if definition_entry is not None and len(definition_entry) == 1:
-            definition_entry = definition_entry[0]
-            if definition_entry["definition_owner"] != owner_id:
-                return "You do not have access to this definition file"
-        else:
-            raise ValueError("No db entry for {}".format(definition_id))
+        definition_entry = select_by_column("definition", definition_id=definition_id)[0]
         build_entry = select_by_column("build", definition_id=definition_id, container_type=to_format)
         if build_entry is not None and len(build_entry) == 1:
             build_entry = build_entry[0]
@@ -290,19 +284,15 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
 
         update_table_entry("build", build_id, **{"build_status": "building"})
         if to_format == "docker":
-            # time.sleep(10)
             logging.info("{} {} {} {} {}".format(owner_id, definition_id, build_id, to_format, container_name))
             print("THREAD_ID: {}".format(thread_id))
             print("{} {} {} {} {}".format(owner_id, definition_id, build_id, to_format, container_name))
-            # return "blah"
             t0 = time.time()
             docker_image = build_to_docker(definition_entry, container_name)
-
             logging.info("THREAD: {}, Finished building {}: (ID {}) in {} seconds".format(thread_id,
                                                                                           container_name,
                                                                                           build_id,
                                                                                           time.time() - t0))
-
             if docker_image:
                 docker_client = docker.from_env()
                 docker_image = docker_image[0]
@@ -313,6 +303,8 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                         if container_name in repo_tag:
                             container_size = image["Size"]
                             break
+                        else:
+                            container_size = None
                 print("SETTING TO PUSHING THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
                 update_table_entry("build", build_id, **{"build_status": "pushing",
                                                          "build_time": build_time,
@@ -336,13 +328,11 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                     return build_id
                 else:
                     print("UPDATING TO FAILED THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
-                    update_table_entry("build", build_id, **{"build_status": "failed"})
-                    docker.from_env().images.remove(container_name, force=True)
+                    docker_client.images.remove(container_name, force=True)
                     print("FINISHED UPDATINGN THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
                     raise ValueError("Failed to push")
             else:
                 print("THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
-                update_table_entry("build", build_id, **{"build_status": "failed"})
                 print("THREAD_ID: {}, BUILD_ID: {}".format(thread_id, build_id))
                 raise ValueError("Failed to build docker container")
 
@@ -351,7 +341,6 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                 print("BUILDING {}".format(container_name))
                 singularity_image = build_to_singularity(definition_entry, container_name)
             else:
-                update_table_entry("build", build_id, **{"build_status": "failed"})
                 raise ValueError("Invalid Singularity container name")
             if singularity_image:
                 print("DONE BUILDING: {}".format(container_name))
@@ -360,10 +349,10 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                 image_size = os.path.getsize(container_name)
 
                 build_entry["build_status"] = "pushing"
-                update_table_entry("build",build_id, **{"build_status": "pushing",
-                                                        "build_time": build_time,
-                                                        "last_built": last_built,
-                                                        "container_size": image_size})
+                update_table_entry("build", build_id, **{"build_status": "pushing",
+                                                         "build_time": build_time,
+                                                         "last_built": last_built,
+                                                         "container_size": image_size})
                 print("Pushing: {}".format(container_name))
                 s3 = boto3.client("s3")
                 s3.upload_fileobj(open(singularity_image, 'rb'),
@@ -377,8 +366,6 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                 return build_id
             else:
                 print("Failed building: {}".format(container_name))
-                build_entry["build_status"] = "failed"
-                update_table_entry("build",build_id, **{"build_status": "failed"})
                 raise ValueError("Failed to build singularity container")
 
     except Exception as e:

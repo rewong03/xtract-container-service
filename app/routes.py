@@ -56,7 +56,7 @@ def upload_file():
 @app.route('/build', methods=["POST", "GET"])
 def build():
     if 'Authorization' not in request.headers:
-        abort(401, 'You must be logged in to perform this function.')
+        abort(401, "You must be logged in to perform this function.")
 
     token = request.headers.get('Authorization')
     token = str.replace(str(token), 'Bearer ', '')
@@ -69,16 +69,20 @@ def build():
             params = request.json
             required_params = {"definition_id", "to_format", "container_name"}
             if set(params.keys()) >= required_params:
-                build_id = str(uuid.uuid4())
-                # print("HERE")
-                task = {"owner_id": client_id, "definition_id": params["definition_id"],
-                        "build_id": build_id, "to_format": params["to_format"],
-                        "container_name": params["container_name"]}
-                task = build_container.apply_async(args=[client_id, params["definition_id"],
-                                                         build_id, params["to_format"],
-                                                         params["container_name"],
-                                                         str(uuid.uuid4())])
-                return build_id
+                definition_entry = select_by_column("definition", definition_id=params["definition_id"])
+                if definition_entry is not None and len(definition_entry) == 1:
+                    definition_entry = definition_entry[0]
+                    if definition_entry["definition_owner"] != client_id:
+                        abort(400, "You don't have permission to use this definition file")
+                    else:
+                        build_id = str(uuid.uuid4())
+                        build_container.apply_async(args=[client_id, params["definition_id"],
+                                                          build_id, params["to_format"],
+                                                          params["container_name"],
+                                                          str(uuid.uuid4())])
+                        return build_id
+                else:
+                    abort(400, "No definition DB entry for {}".format(params["definition_id"]))
             else:
                 abort(400, "Missing {} parameters".format(required_params.difference(set(params.keys()))))
         elif request.method == "GET":
