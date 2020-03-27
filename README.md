@@ -2,7 +2,7 @@
 This is the repository for the Xtract Container Service (XCS), an application for pushing and pulling Docker and Singularity containers.
 
 ## Getting Started
-THese instructinos will get the XCS application running on your local machine for development and testing purposes.
+These instructinos will get the XCS application running on your local machine for development and testing purposes.
 
 ### Prerequisites
 - Docker (available [here](https://docs.docker.com/install/))
@@ -22,13 +22,12 @@ Next, install the requirements:
 ```
 pip install -r requirements.txt
 ```
-
-### Setup
+### Setting up AWS
 First, configure your AWS CLI:
 ```
 aws configure
 ```
-Next, create a file named database.ini and store your AWS RDS info:
+Next, create a PostgreSQL database in AWS RDS and store the following in a file named `database.ini:`
 ```
 [postgresql]
 host=YOUR_HOST_ADRESS
@@ -36,7 +35,7 @@ database=postgres
 user=postgres
 password=YOUR_PASSWORD
 ```
-Then, create a AWS S3 bucket and SQS queue named `xtract-container-service`
+Finally, create an AWS S3 bucket named `xtract-container-service`
 
 ### Running XCS
 First, save your Globus Auth. Client ID and Client Secret as environment variables:
@@ -44,9 +43,17 @@ First, save your Globus Auth. Client ID and Client Secret as environment variabl
 export GL_CLIENT=YOUR_GL_CLIENT
 export GL_CLIENT_SECRET=YOUR_GL_CLIENT_SECRET
 ```
+Next, save the path of the flask app. as an environment variable:
+```
+export FLASK_ENV=xtract-container-service-main.py
+```
 Then, start the application:
 ```
-python3 application.py
+flask run
+```
+Finally, in a second terminal, start the Celery worker:
+```
+celery -A app.celery_app worker --pool=gevent --concurrency=YOUR_MAX_THREADS
 ```
 
 ## Interacting with the server
