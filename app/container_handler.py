@@ -75,31 +75,6 @@ def push_to_ecr(docker_image, build_id, image_name):
         raise ValueError("Failed to push")
 
 
-def pull_container(build_id):
-    """Pulls Docker containers from ECR and Singularity containers from S3.
-
-    Parameters:
-    build_id (str): ID of container to pull.
-
-    Return:
-    (file obj. gen.): File generator for the Docker container.
-    """
-    build_entry = select_by_column("build", build_id=build_id)
-
-    if build_entry is not None and len(build_entry) == 1:
-        build_entry = build_entry[0]
-    else:
-        raise ValueError("Invalid build ID")
-
-    if build_entry["container_type"] == "docker":
-        registry = ecr_login()
-        docker_client = docker.from_env()
-        image = docker_client.images.pull(registry[8:], tag=build_entry["container_name"])
-        return image.save(chunk_size=10485760)
-    else:
-        return "pass"
-
-
 def build_to_singularity(definition_entry, container_location):
     """Builds a Singularity container from a Dockerfile or Singularity file
     within the definition db.
@@ -234,7 +209,7 @@ def convert_definition_file(definition_id, singularity_def_name=None):
         shutil.rmtree(new_path)
 
 
-@celery_app.task(bind=True, default_retry_delay=10)
+@celery_app.task(bind=True, default_retry_delay=10, max_retries=1)
 def build_container(self, owner_id, definition_id, build_id, to_format, container_name,
                     thread_id):
     """Automated pipeline for building a recipe file from the
@@ -369,8 +344,9 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                 raise ValueError("Failed to build singularity container")
 
     except Exception as e:
-        print(e)
+        print("{}: {}".format(build_id, e))
         logging.error("Exception", exc_info=True)
+
         build_entry = select_by_column("build", definition_id=definition_id, container_type=to_format)
         if build_entry is not None and len(build_entry) == 1:
             build_entry = build_entry[0]
@@ -380,7 +356,7 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
         return "Failed"
 
 
-def pull_container(owner_id, build_id):
+def pull_container(build_entry):
     """Pulls Docker containers from ECR and Singularity containers from S3.
 
     Parameters:
@@ -391,48 +367,29 @@ def pull_container(owner_id, build_id):
     Return:
     (file obj.): File object of container.
     """
-    try:
-        build_entry = select_by_column("build",build_id=build_id)
-        if build_entry is not None and len(build_entry) == 1:
-            build_entry = build_entry[0]
+    build_id = build_entry["build_id"]
+    file_name = os.path.join("app/",
+                             build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif"))
 
-            if build_entry["container_owner"] != owner_id:
-                return "You do not have access to this definition file"
-        else:
-            raise ValueError("Invalid build ID")
+    try:
         if build_entry["container_type"] == "docker":
             registry = ecr_login()[8:] + "/" + build_id
             docker_client = docker.from_env()
             image = docker_client.images.pull(registry, tag=build_entry["container_name"])
-            try:
-                with open("temp.tar", "wb") as f:
-                    for chunk in image.save():
-                        f.write(chunk)
 
-                return "temp.tar"
-            except Exception as e:
-                if os.path.exists("temp.tar"):
-                    os.remove("temp.tar")
-                print(e)
-        else:
-            try:
-                s3 = boto3.client('s3')
-                s3.download_file('xtract-container-service', os.path.join(build_entry["build_id"],
-                                                                          build_entry["container_name"]),
-                                 "temp.sif")
-                return "temp.sif"
-            except Exception as e:
-                if os.path.exists("temp.sif"):
-                    os.remove("temp.sif")
-                print(e)
-                return "Failed"
+            with open(file_name, "wb") as f:
+                for chunk in image.save():
+                    f.write(chunk)
 
+            return file_name
+        elif build_entry["container_type"] == "singularity":
+            s3 = boto3.client('s3')
+            s3.download_file('xtract-container-service', os.path.join(build_entry["build_id"],
+                                                                      build_entry["container_name"]),
+                             file_name)
+            return file_name
     except Exception as e:
-        print("Exception: {}".format(e))
-        logging.error("Exception", exc_info=True)
-
-
-if __name__ == "__main__":
-    logging.basicConfig(filename='app.log',
-                        filemode='w',
-                        level=logging.INFO, format='%(funcName)s - %(asctime)s - %(message)s')
+        print(e)
+        if os.path.exists(file_name):
+            os.remove(file_name)
+        return None

@@ -45,7 +45,7 @@ export GL_CLIENT_SECRET=YOUR_GL_CLIENT_SECRET
 ```
 Next, save the path of the flask app. as an environment variable:
 ```
-export FLASK_ENV=xtract-container-service-main.py
+export FLASK_APP=xtract-container-service-main.py
 ```
 Then, start the application:
 ```

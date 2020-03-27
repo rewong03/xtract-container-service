@@ -105,25 +105,35 @@ def pull():
     token = str.replace(str(token), 'Bearer ', '')
     conf_app = ConfidentialAppAuthClient(os.environ["GL_CLIENT"], os.environ["GL_CLIENT_SECRET"])
     intro_obj = conf_app.oauth2_token_introspect(token)
-
     if "client_id" in intro_obj:
         client_id = intro_obj["client_id"]
         params = request.json
         if "build_id" in params:
-            try:
-                file_path = pull_container(client_id, params["build_id"])
-                response = send_file(file_path)
-                if os.path.exists(file_path):
-                    os.remove(file_path)
+            build_id = params["build_id"]
+            build_entry = select_by_column("build", build_id=build_id)
+            if build_entry is not None and len(build_entry) == 1:
+                build_entry = build_entry[0]
 
+                if build_entry["container_owner"] != client_id:
+                    abort(400, "You do not have access to this definition file")
+            else:
+                abort(400, "Invalid build ID")
+
+            try:
+                file_name = pull_container(build_entry)
+                response = send_file(os.path.basename(file_name))
+                if os.path.exists(file_name):
+                    os.remove(file_name)
                 return response
             except Exception as e:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                print("Exception: {}".format(e))
-                return "Failed"
+                file_name = os.path.join("app/",
+                                         build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif"))
+                if os.path.exists(file_name):
+                    os.remove(file_name)
+                print(e)
+                abort(400, "Failed to pull {}".format(build_id))
         else:
-            return "Failed"
+            abort(400, "No build ID")
     else:
         abort(400, "Failed to authenticate user")
 
