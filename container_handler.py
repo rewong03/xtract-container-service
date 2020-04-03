@@ -3,9 +3,13 @@ import logging
 import os
 import shutil
 import subprocess
+import tarfile
 import time
+import tempfile
 import urllib
 import uuid
+import zipfile
+from io import BytesIO
 import boto3
 import botocore.session
 import docker
@@ -26,7 +30,7 @@ def pull_s3_dir(definition_id):
     """Pulls a directory of files from a definition_id folder in our
     S3 bucket.
 
-    Parameter:
+    Parameters:
     definition_id (str): Name of id to pull files from.
     """
     bucket = boto3.resource('s3').Bucket("xtract-container-service")
@@ -39,7 +43,7 @@ def pull_s3_dir(definition_id):
 def ecr_login():
     """Logs Docker into ECR registry.
 
-    Return:
+    Returns:
     registry (str): Name of the ECR registry logged into.
     """
     ecr_client = boto3.client('ecr')
@@ -60,7 +64,7 @@ def push_to_ecr(docker_image, build_id, image_name):
     build_id (str): Build UUID of docker_image.
     image_name (str): Name of the image of docker_image.
 
-    Return:
+    Returns:
     (str): ID of pushed Docker image or None if the push fails.
     """
     ecr_client = boto3.client("ecr")
@@ -90,7 +94,7 @@ def build_to_singularity(definition_entry, container_location):
     definition_entry (str): Entry of definition db entry to build singularity container from.
     container_location (str): Path to location to build the container.
 
-    Return:
+    Returns:
     container_location: Returns the location of the Singularity container or None if it
     fails to save.
     """
@@ -114,7 +118,7 @@ def build_to_docker(definition_entry, image_name):
     definition_entry (str): Entry of definition db entry to build docker container from.
     image_name (str): Name to tag the final image with.
 
-    Return:
+    Returns:
     image (Image obj.): Docker image object or None if the container fails to build.
     """
     definition_id = definition_entry["definition_id"]
@@ -233,7 +237,7 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
     build_id (str): UUID to give to a new build entry. build_id should be None if
     a build entry exists for definition_id.
 
-    Return:
+    Returns:
     build_id (str): Build id of the built container or failed if the container
     failed to build.
     """
@@ -351,7 +355,7 @@ def pull_container(build_entry):
     token introspection.
     build_id (str): ID of container to pull.
 
-    Return:
+    Returns:
     (file obj.): File object of container.
     """
     build_id = build_entry["build_id"]
@@ -380,3 +384,94 @@ def pull_container(build_entry):
         if os.path.exists(file_name):
             os.remove(file_name)
         return None
+
+
+def repo2docker_container(target, container_name, client_id):
+    """Takes a .zip or .tar file object or git repo link and attempts to run repo2docker on it.
+
+    Parameters:
+    target (file obj. or str.): A link to a github repository or a file object.
+    container_name (str): Name to give to container.
+    """
+    if isinstance(target, str) and target.startswith("https://github.com"):
+        target_type = "git"
+        cmd = "jupyter-repo2docker --no-run --image-name {} {}".format(container_name, target)
+    else:
+        if zipfile.is_zipfile(target):
+            target_type = ".zip"
+            with zipfile.ZipFile(target) as zip_obj:
+                temp_dir = tempfile.mkdtemp()
+                zip_obj.extractall(path=temp_dir)
+        else:
+            try:
+                with tarfile.TarFile(fileobj=target) as tar_obj:
+                    temp_dir = tempfile.mkdtemp()
+                    tar_obj.extractall(path=temp_dir)
+                target_type = ".tar"
+            except tarfile.TarError as e:
+                return "rip"
+
+        cmd = "jupyter-repo2docker --no-run --image-name {} {}".format(container_name, temp_dir)
+
+    subprocess.call(cmd, shell=True)
+
+    client = docker.from_env()
+    try:
+        docker_image = client.images.get(container_name)
+    except:
+        return "Failed"
+
+    definition_id = str(uuid.uuid4())
+    create_table_entry("definition",
+                       definition_id=definition_id,
+                       definition_type="docker",
+                       definition_name=container_name,
+                       definition_owner=client_id)
+
+    if target_type == ".zip" or target_type == ".tar":
+        s3 = boto3.client('s3')
+
+        s3.upload_fileobj(target, "xtract-container-service",
+                          '{}/{}'.format(definition_id, container_name + target_type))
+    else:
+        #TODO figure out how we'll want to store github url
+        pass
+
+    for image in client.df()["Images"]:
+        for repo_tag in image["RepoTags"]:
+            if container_name in repo_tag:
+                container_size = image["Size"]
+                break
+            else:
+                container_size = None
+
+    build_id = str(uuid.uuid4())
+    build_entry = build_schema
+    build_entry["build_id"] = build_id
+    build_entry["container_name"] = container_name
+    build_entry["definition_id"] = definition_id
+    build_entry["container_type"] = "docker"
+    build_entry["container_owner"] = client_id
+    build_entry["build_status"] = "pushing"
+    build_entry["build_time"] = datetime.datetime.now()
+    build_entry["container_size"] = container_size
+    create_table_entry("build", **build_entry)
+
+    response = push_to_ecr(docker_image, build_id, container_name)
+
+    if response is not None:
+        update_table_entry("build", build_id, **{"build_status": "success"})
+        client.images.remove(response, force=True)
+    else:
+        client.images.remove(container_name, force=True)
+        return "Failed"
+
+    return build_id
+
+
+
+
+if __name__ == "__main__":
+    with open("/Users/ryan/Documents/CS/CDAC/official_xtract/xtract-crawler/decompressor_tests/junk.zip") as f:
+        print(type(f))
+        repo2docker_container(f)

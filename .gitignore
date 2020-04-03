@@ -9,4 +9,5 @@
 *.ini
 *.pyc
 *.tar
+*.zip
 Dockerfile

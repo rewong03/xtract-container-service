@@ -6,9 +6,8 @@ fair-research-login
 flask
 gevent
 globus_sdk
+jupyter-repo2docker
 namegenerator
-psycopg2-binary
-psycopg2
 spython
 
 

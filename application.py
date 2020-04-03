@@ -4,7 +4,7 @@ import boto3
 from flask import Flask, request, send_file, abort
 from globus_sdk import ConfidentialAppAuthClient
 from pg_utils import create_table_entry, select_by_column
-from container_handler import build_container, pull_container
+from container_handler import build_container, pull_container, repo2docker_container
 
 
 application = Flask(__name__)
@@ -107,6 +107,7 @@ def pull():
     token = str.replace(str(token), 'Bearer ', '')
     conf_app = ConfidentialAppAuthClient(os.environ["GL_CLIENT"], os.environ["GL_CLIENT_SECRET"])
     intro_obj = conf_app.oauth2_token_introspect(token)
+
     if "client_id" in intro_obj:
         client_id = intro_obj["client_id"]
         params = request.json
@@ -140,6 +141,40 @@ def pull():
         abort(400, "Failed to authenticate user")
 
 
+@application.route('/repo2docker', methods=["POST"])
+def repo2docker():
+    if 'Authorization' not in request.headers:
+        abort(401, 'You must be logged in to perform this function.')
+
+    token = request.headers.get('Authorization')
+    token = str.replace(str(token), 'Bearer ', '')
+    conf_app = ConfidentialAppAuthClient(os.environ["GL_CLIENT"], os.environ["GL_CLIENT_SECRET"])
+    intro_obj = conf_app.oauth2_token_introspect(token)
+
+    if "client_id" in intro_obj:
+        client_id = str(intro_obj["client_id"])
+
+        #TODO: Try to allow users send filename separate from the container name. Currently the container name
+        # defaults to the filename because you can't send a file and json in one request.
+        if request.json is not None and "git_repo" in request.json and "container_name" in request.json:
+            return repo2docker_container(request.json["git_repo"], request.json["container_name"])
+        elif 'file' in request.files:
+            file = request.files['file']
+            if file.filename == '':
+                abort(400, "No file selected")
+            if not(file.filename.endswith(".zip") or file.filename.endswith(".tar")):
+                abort(400, "Unsopported file format")
+            if file:
+                print(repo2docker_container(file, file.filename, client_id))
+                return "k"
+            else:
+                return abort(400, "Failed to upload file")
+        else:
+            abort(400, "No git repo or file")
+    else:
+        abort(400, "Failed to authenticate user")
+
+
 if __name__ == "__main__":
-    application.run()
+    application.run(debug=True)
 

@@ -30,7 +30,7 @@ def config(config_file='database.ini',
     config_file (str): Path to file to read credentials from.
     section (str): Section in .ini file where credentials are located.
 
-    Return:
+    Returns:
     credentials (dict (str)): Dictionary with credentials.
     """
     parser = ConfigParser()
@@ -56,7 +56,7 @@ def create_connection(config_file='database.ini'):
     Parameters:
     config_file (str): Path to file to read credentials from.
 
-    Return:
+    Returns:
     conn (Connection Obj.): Connection object to database.
     """
     conn = psycopg2.connect(**config(config_file=config_file))
@@ -174,7 +174,7 @@ def select_all_rows(table_name):
     table_name (str): Name of table to create an entry to. Currently
     either "definition" or "build".
 
-    Return:
+    Returns:
     rows (list (dict)): List of dictionaries containing the
     columns and their values
     """
@@ -208,7 +208,7 @@ def search_array(table_name, array, value):
     array (str): Name of array column to search.
     value: Value inside of array to search for.
 
-    Return:
+    Returns:
     rows (list(dict)): List of rows that match the values.
     """
     assert table_name in ["definition", "build"], "Not a valid table"
@@ -245,7 +245,7 @@ def select_by_column(table_name, **columns):
     **columns (str): The value to search passed with the value
     to search for. E.g. recipe="1234a".
 
-    Return:
+    Returns:
     rows (list(dict)): List of rows that match the values.
     """
     assert table_name in ["definition", "build"], "Not a valid table"
