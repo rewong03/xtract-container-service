@@ -281,12 +281,11 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                 last_built = build_entry["build_time"] if build_entry["build_time"] else None
                 build_time = datetime.datetime.now()
                 for image in docker_client.df()["Images"]:
-                    for repo_tag in image["RepoTags"]:
-                        if container_name in repo_tag:
-                            container_size = image["Size"]
-                            break
-                        else:
-                            container_size = None
+                    if any(list(map(lambda x: container_name in x, image["RepoTags"]))):
+                        container_size = image["Size"]
+                        break
+                    else:
+                        container_size = None
                 update_table_entry("build", build_id, **{"build_status": "pushing",
                                                          "build_time": build_time,
                                                          "last_built": last_built,
@@ -448,12 +447,11 @@ def repo2docker_container(self, client_id, build_id, target, container_name):
                           '{}/{}'.format(definition_id, container_name + target_type))
 
     for image in client.df()["Images"]:
-        for repo_tag in image["RepoTags"]:
-            if container_name in repo_tag:
-                container_size = image["Size"]
-                break
-            else:
-                container_size = None
+        if any(list(map(lambda x: container_name in x, image["RepoTags"]))):
+            container_size = image["Size"]
+            break
+        else:
+            container_size = None
 
     update_table_entry("build", build_id, definition_id=definition_id, container_size=container_size)
 
