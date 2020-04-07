@@ -7,7 +7,7 @@ from configparser import ConfigParser
 DEFINITION_TABLE = {"definition_id": "TEXT PRIMARY KEY",
                     "definition_type": "TEXT", "definition_name": "TEXT",
                     "pre_containers": "TEXT []", "post_containers": "TEXT []",
-                    "replaces_container": "TEXT []", "s3_location": "TEXT",
+                    "replaces_container": "TEXT []", "location": "TEXT",
                     "definition_owner": "TEXT"}
 
 BUILD_TABLE = {"build_id": "TEXT PRIMARY KEY",
@@ -63,6 +63,22 @@ def create_connection(config_file='database.ini'):
     logging.info("Connection to database succeeded")
 
     return conn
+
+
+def table_exists(table_name):
+    """Checks whether a table exists in the database.
+
+    Parameters:
+    table_name (str): Name of table to check exists.
+
+    Returns:
+    (bool): Whether the table exists.
+    """
+    conn = create_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM information_schema.tables WHERE TABLE_NAME=%s", (table_name,))
+
+    return bool(cur.rowcount)
 
 
 def prep_database():

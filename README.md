@@ -57,6 +57,6 @@ celery -A container_handler.celery_app worker --pool=gevent --concurrency=YOUR_M
 ```
 
 ## Interacting with the server
-XCS is a REST API so all interactions can be made with Python's request library. Examples of how to make requests can be found in `app_demp.ipynb`
+XCS is a REST API so all interactions can be made with Python's request library. Examples of how to make requests can be found in `app_demo.ipynb`
 
 

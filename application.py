@@ -3,11 +3,17 @@ import uuid
 import boto3
 from flask import Flask, request, send_file, abort
 from globus_sdk import ConfidentialAppAuthClient
-from pg_utils import create_table_entry, select_by_column
+from pg_utils import table_exists, prep_database, create_table_entry, select_by_column
 from container_handler import build_container, pull_container, repo2docker_container
 
 
 application = Flask(__name__)
+
+
+@application.before_first_request
+def config():
+    if not(table_exists("definition") and table_exists('build')):
+        prep_database()
 
 
 @application.route('/')
@@ -42,7 +48,7 @@ def upload_file():
                                definition_id=definition_id,
                                definition_type="docker" if filename == "Dockerfile" else "singularity",
                                definition_name=filename,
-                               s3_location=definition_id,
+                               location="s3",
                                definition_owner=client_id)
             s3 = boto3.client('s3')
 
@@ -141,7 +147,7 @@ def pull():
         abort(400, "Failed to authenticate user")
 
 
-@application.route('/repo2docker', methods=["POST"])
+@application.route('/repo2docker', methods=["POST", "GET"])
 def repo2docker():
     if 'Authorization' not in request.headers:
         abort(401, 'You must be logged in to perform this function.')
@@ -154,23 +160,36 @@ def repo2docker():
     if "client_id" in intro_obj:
         client_id = str(intro_obj["client_id"])
 
-        #TODO: Try to allow users send filename separate from the container name. Currently the container name
-        # defaults to the filename because you can't send a file and json in one request.
-        if request.json is not None and "git_repo" in request.json and "container_name" in request.json:
-            return repo2docker_container(request.json["git_repo"], request.json["container_name"])
-        elif 'file' in request.files:
-            file = request.files['file']
-            if file.filename == '':
-                abort(400, "No file selected")
-            if not(file.filename.endswith(".zip") or file.filename.endswith(".tar")):
-                abort(400, "Unsopported file format")
-            if file:
-                print(repo2docker_container(file, file.filename, client_id))
-                return "k"
+        if request.method == "POST":
+            build_id = str(uuid.uuid4())
+
+            #TODO: Try to allow users send filename separate from the container name. Currently the container name
+            # defaults to the filename because you can't send a file and json in one request.
+            if request.json is not None and "git_repo" in request.json and "container_name" in request.json:
+                repo2docker_container.apply_async(args=[client_id, build_id,
+                                                        request.json["git_repo"], request.json["container_name"]])
+                return build_id
+            elif 'file' in request.files:
+                file = request.files['file']
+                if file.filename == '':
+                    abort(400, "No file selected")
+                if not(file.filename.endswith(".zip") or file.filename.endswith(".tar")):
+                    abort(400, "Unsopported file format")
+                if file:
+                    repo2docker_container.apply_async(args=[client_id, build_id, file, file.filename])
+                    return build_id
+                else:
+                    return abort(400, "Failed to upload file")
             else:
-                return abort(400, "Failed to upload file")
-        else:
-            abort(400, "No git repo or file")
+                abort(400, "No git repo or file")
+
+        elif request.method == "GET":
+            build_entry = select_by_column("build", container_owner=client_id,
+                                           build_id=request.json["build_id"])
+            if build_entry is not None and len(build_entry) == 1:
+                return build_entry[0]
+            else:
+                abort(400, "Build ID not valid")
     else:
         abort(400, "Failed to authenticate user")
 

@@ -9,7 +9,6 @@ import tempfile
 import urllib
 import uuid
 import zipfile
-from io import BytesIO
 import boto3
 import botocore.session
 import docker
@@ -205,7 +204,7 @@ def convert_definition_file(definition_id, singularity_def_name=None):
         db_entry["pre_containers"] = definition_entry["pre_containers"]
         db_entry["post_containers"] = definition_entry["post_containers"]
         db_entry["replaces_container"] = definition_entry["replaces_container"]
-        db_entry["s3_location"] = str(new_definition_id)
+        db_entry["location"] = "s3"
         create_table_entry("container", **db_entry)
 
         logging.info("Successfully converted %s %s definition file to %s %s definition file",
@@ -386,7 +385,8 @@ def pull_container(build_entry):
         return None
 
 
-def repo2docker_container(target, container_name, client_id):
+@celery_app.task(bind=True, default_retry_delay=10, max_retries=1)
+def repo2docker_container(self, client_id, build_id, target, container_name):
     """Takes a .zip or .tar file object or git repo link and attempts to run repo2docker on it.
 
     Parameters:
@@ -409,16 +409,28 @@ def repo2docker_container(target, container_name, client_id):
                     tar_obj.extractall(path=temp_dir)
                 target_type = ".tar"
             except tarfile.TarError as e:
-                return "rip"
+                return "Failed"
 
         cmd = "jupyter-repo2docker --no-run --image-name {} {}".format(container_name, temp_dir)
+
+    build_entry = build_schema
+    build_entry["build_id"] = build_id
+    build_entry["container_name"] = container_name
+    build_entry["container_type"] = "docker"
+    build_entry["container_owner"] = client_id
+    build_entry["build_status"] = "building"
+    build_entry["build_time"] = datetime.datetime.now()
+    create_table_entry("build", **build_entry)
 
     subprocess.call(cmd, shell=True)
 
     client = docker.from_env()
     try:
         docker_image = client.images.get(container_name)
+        update_table_entry("build", build_id, build_status="pushing")
     except:
+        update_table_entry("build", build_id, build_status="failed")
+        self.retry()
         return "Failed"
 
     definition_id = str(uuid.uuid4())
@@ -426,6 +438,7 @@ def repo2docker_container(target, container_name, client_id):
                        definition_id=definition_id,
                        definition_type="docker",
                        definition_name=container_name,
+                       location=target if target_type == "git" else "s3",
                        definition_owner=client_id)
 
     if target_type == ".zip" or target_type == ".tar":
@@ -433,9 +446,6 @@ def repo2docker_container(target, container_name, client_id):
 
         s3.upload_fileobj(target, "xtract-container-service",
                           '{}/{}'.format(definition_id, container_name + target_type))
-    else:
-        #TODO figure out how we'll want to store github url
-        pass
 
     for image in client.df()["Images"]:
         for repo_tag in image["RepoTags"]:
@@ -445,17 +455,7 @@ def repo2docker_container(target, container_name, client_id):
             else:
                 container_size = None
 
-    build_id = str(uuid.uuid4())
-    build_entry = build_schema
-    build_entry["build_id"] = build_id
-    build_entry["container_name"] = container_name
-    build_entry["definition_id"] = definition_id
-    build_entry["container_type"] = "docker"
-    build_entry["container_owner"] = client_id
-    build_entry["build_status"] = "pushing"
-    build_entry["build_time"] = datetime.datetime.now()
-    build_entry["container_size"] = container_size
-    create_table_entry("build", **build_entry)
+    update_table_entry("build", build_id, definition_id=definition_id, container_size=container_size)
 
     response = push_to_ecr(docker_image, build_id, container_name)
 
@@ -464,14 +464,11 @@ def repo2docker_container(target, container_name, client_id):
         client.images.remove(response, force=True)
     else:
         client.images.remove(container_name, force=True)
+        self.retry()
         return "Failed"
 
     return build_id
 
 
-
-
 if __name__ == "__main__":
-    with open("/Users/ryan/Documents/CS/CDAC/official_xtract/xtract-crawler/decompressor_tests/junk.zip") as f:
-        print(type(f))
-        repo2docker_container(f)
+    pass
