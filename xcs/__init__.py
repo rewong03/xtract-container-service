@@ -23,7 +23,7 @@ class XtractConnection:
         Returns:
         definition_id (str): ID of the uploaded definition file or an error message.
         """
-        url = "http://127.0.0.1:5000/upload_def_file"
+        url = "{}/upload_def_file".format(self.base_url)
         payload = {"file": (file_name, open(file_path, "rb"))}
         response = requests.post(url, files=payload, headers=self.headers)
         definition_id = response.text
@@ -45,7 +45,7 @@ class XtractConnection:
         Returns:
         build_id (str): ID of the container being built or an error message.
         """
-        url = "http://127.0.0.1:5000/build"
+        url = "{}/build".format(self.base_url)
         payload = {"definition_id": definition_id, "to_format": to_format, "container_name": container_name}
         response = requests.post(url, json=payload, headers=self.headers)
         build_id = response.text
@@ -61,7 +61,7 @@ class XtractConnection:
         Returns:
         status (json or str.): Json of build entry or an error message
         """
-        url = "http://127.0.0.1:5000/build"
+        url = "{}/build".format(self.base_url)
         payload = {"build_id": build_id}
         response = requests.get(url, json=payload, headers=self.headers)
 
