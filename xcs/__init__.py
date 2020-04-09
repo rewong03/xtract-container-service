@@ -71,3 +71,58 @@ class XtractConnection:
             status = response.text
 
         return status
+
+    def pull(self, build_id, file_path):
+        """Pulls a container down and writes it to a file.
+
+        Note:
+        Docker containers are pulled as .tar files and Singularity containers
+        are pulled as .sif files.
+
+        Parameters:
+        build_id (str): ID of build to pull down.
+        file_path (str): Full path of file to write to.
+
+        Returns:
+        (str): A success or error message.
+        """
+        url = "{}/pull".format(self.base_url)
+        payload = {"build_id": build_id}
+        response = requests.post(url, json=payload, headers=self.headers)
+
+        if isinstance(str, response):
+            return response
+        else:
+            with open(file_path, 'wb') as f:
+                f.write(response)
+                return "Success"
+
+    def repo2docker(self, container_name, git_repo=None, file_path=None):
+        """Builds a Docker container from a git repository or .tar or .zip file.
+
+        Parameters:
+        container_name (str): Name of container to build.
+        git_repo (str): URL to base git repository to build.
+        file_path (str): Path to .zip or .tar file to build.
+
+        Return:
+        (str): build_id of container or an error message.
+        """
+        url = "{}/repo2docker".format(self.base_url)
+
+        if git_repo and file_path:
+            return "Can only upload a git repository OR a file"
+        elif git_repo:
+            payload = {"container_name": container_name, "git_repo": git_repo}
+            response = requests.post(url, json=payload, headers=self.headers)
+            build_id = response.text
+
+            return build_id
+        elif file_path:
+            payload = {"file": (container_name, open(file_path, "rb"))}
+            response = requests.post(url, files=payload, headers=self.headers)
+            build_id = response.text
+
+            return build_id
+        else:
+            return "No git repository or file path"
