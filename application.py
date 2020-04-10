@@ -1,14 +1,17 @@
+import json
 import os
 import uuid
 import boto3
 from flask import Flask, request, send_file, abort
 from globus_sdk import ConfidentialAppAuthClient
+from container_handler import pull_container, repo2docker_container
 from pg_utils import table_exists, prep_database, create_table_entry, select_by_column, update_table_entry, build_schema
-from container_handler import build_container, pull_container, repo2docker_container
+from sqs_queue_utils import put_message
+from task_manager import TaskManager
 
 
 application = Flask(__name__)
-
+manager = TaskManager(max_threads=2, kill_time=20)
 
 @application.before_first_request
 def config():
@@ -16,13 +19,16 @@ def config():
         prep_database()
 
 
+@application.route('/thread')
+def thread():
+    return json.dumps(manager.thread_status)
+
+
 @application.route('/')
 def index():
     return "Hello, there!"
 
 
-#TODO: Almost every function in container_handler and pg_utils logs and catches errors
-# which makes it hard to tell if something failed
 @application.route('/upload_def_file', methods=["POST"])
 def upload_file():
     if 'Authorization' not in request.headers:
@@ -101,8 +107,11 @@ def build():
                             build_entry["build_status"] = "pending"
                             create_table_entry("build", **build_entry)
 
-                        build_container.apply_async(args=[build_entry, params["to_format"],
-                                                          params["container_name"]])
+                        put_message({"function_name": "build_container",
+                                     "build_entry": build_entry,
+                                     "to_format": params["to_format"],
+                                     "container_name": params["container_name"]})
+                        manager.start_thread()
                         return build_id
                 else:
                     abort(400, "No definition DB entry for {}".format(params["definition_id"]))

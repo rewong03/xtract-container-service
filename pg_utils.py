@@ -12,8 +12,8 @@ DEFINITION_TABLE = {"definition_id": "TEXT PRIMARY KEY",
 
 BUILD_TABLE = {"build_id": "TEXT PRIMARY KEY",
                "definition_id": "TEXT REFERENCES definition(definition_id)",
-               "build_time": "TIMESTAMP", "build_version": "INT",
-               "last_built": "TIMESTAMP", "container_type": "TEXT",
+               "build_time": "TEXT", "build_version": "INT",
+               "last_built": "TEXT", "container_type": "TEXT",
                "container_size": "INT", "build_status": "TEXT",
                "container_owner": "TEXT", "build_location": "TEXT",
                "container_name": "TEXT"}

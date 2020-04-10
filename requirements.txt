@@ -1,10 +1,7 @@
 boto3
-botocore
-celery
 docker
 fair-research-login
 flask
-gevent
 globus_sdk
 jupyter-repo2docker
 namegenerator

@@ -6,23 +6,16 @@ import subprocess
 import tarfile
 import time
 import tempfile
-import urllib
 import uuid
 import zipfile
 import boto3
-import botocore.session
 import docker
 import namegenerator
-from celery import Celery
 from spython.main import Client
 from spython.main.parse.parsers import get_parser
 from spython.main.parse.writers import get_writer
 from pg_utils import definition_schema, build_schema, create_table_entry, update_table_entry, select_by_column
-
-
-aws_credentials = botocore.session.get_session().get_credentials()
-celery_app = Celery("application", broker="sqs://{}:{}@".format(urllib.parse.quote(aws_credentials.access_key, safe=''),
-                                                                urllib.parse.quote(aws_credentials.secret_key, safe='')))
+from sqs_queue_utils import put_message
 
 
 def pull_s3_dir(definition_id):
@@ -219,8 +212,7 @@ def convert_definition_file(definition_id, singularity_def_name=None):
         shutil.rmtree(new_path)
 
 
-@celery_app.task(bind=True, default_retry_delay=10, max_retries=1)
-def build_container(self, build_entry, to_format, container_name):
+def build_container(build_entry, to_format, container_name):
     """Automated pipeline for building a recipe file from the
     definition db to a container.
 
@@ -256,7 +248,7 @@ def build_container(self, build_entry, to_format, container_name):
                 docker_client = docker.from_env()
                 docker_image = docker_image[0]
                 last_built = build_entry["build_time"] if build_entry["build_time"] else None
-                build_time = datetime.datetime.now()
+                build_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
                 for image in docker_client.df()["Images"]:
                     if any(list(map(lambda x: container_name in x, image["RepoTags"]))):
                         container_size = image["Size"]
@@ -311,16 +303,15 @@ def build_container(self, build_entry, to_format, container_name):
                 raise ValueError("Failed to build singularity container")
 
     except Exception as e:
-        print("{}: {}".format(build_id, e))
+        print("HERE")
+        print("{}: {}".format(build_entry["build_id"], e))
         logging.error("Exception", exc_info=True)
 
-        build_entry = select_by_column("build", definition_id=definition_id, container_type=to_format)
         if build_entry is not None and len(build_entry) == 1:
-            build_entry = build_entry[0]
             build_entry["build_status"] = "failed"
             update_table_entry("build", build_entry["build_id"], **{"build_status": "failed"})
-        self.retry()
-        return "Failed"
+
+        raise e
 
 
 def pull_container(build_entry):
@@ -361,7 +352,6 @@ def pull_container(build_entry):
         return None
 
 
-@celery_app.task(bind=True, default_retry_delay=10, max_retries=1)
 def repo2docker_container(self, client_id, build_id, target, container_name):
     """Takes a .zip or .tar file object or git repo link and attempts to run repo2docker on it.
 
@@ -446,4 +436,32 @@ def repo2docker_container(self, client_id, build_id, target, container_name):
 
 
 if __name__ == "__main__":
+    from task_manager import TaskManager
+
+    manager = TaskManager(max_threads=2, idle_time=10, kill_time=20)
+    function_name = "build_container"
+    build_entry = select_by_column("build", build_id="48233d24-de38-45d3-988c-25285bc2a7ad")[0]
+    print(put_message({"function_name": function_name,
+                       "build_entry": build_entry,
+                       "to_format": "docker",
+                       "container_name": "my_thread_test"}))
+    print("Continuing")
+    function_name = "build_container"
+    build_entry = select_by_column("build", build_id="aab75744-597e-4bdb-93ad-6e06b139bafd")[0]
+    print(put_message({"function_name": function_name,
+                       "build_entry": build_entry,
+                       "to_format": "docker",
+                       "container_name": "my_thread_test"}))
+    manager.start_thread()
+    manager.start_thread()
+    manager.start_thread()
+
+    for i in range(1000):
+        print(manager.thread_status)
+        time.sleep(2)
+
+    # for i in range(10):
+    #     x = threading.Thread(target=test, args=(i,))
+    #     x.start()
+    # print('cool')
     pass
