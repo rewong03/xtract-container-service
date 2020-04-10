@@ -3,7 +3,7 @@ import uuid
 import boto3
 from flask import Flask, request, send_file, abort
 from globus_sdk import ConfidentialAppAuthClient
-from pg_utils import table_exists, prep_database, create_table_entry, select_by_column
+from pg_utils import table_exists, prep_database, create_table_entry, select_by_column, update_table_entry, build_schema
 from container_handler import build_container, pull_container, repo2docker_container
 
 
@@ -76,18 +76,33 @@ def build():
         if request.method == "POST":
             params = request.json
             required_params = {"definition_id", "to_format", "container_name"}
-            if set(params.keys()) >= required_params:
+            if set(params.keys()) >= required_params and params["to_format"] in ["docker", "singularity"]:
                 definition_entry = select_by_column("definition", definition_id=params["definition_id"])
                 if definition_entry is not None and len(definition_entry) == 1:
                     definition_entry = definition_entry[0]
                     if definition_entry["definition_owner"] != client_id:
                         abort(400, "You don't have permission to use this definition file")
                     else:
-                        build_id = str(uuid.uuid4())
-                        build_container.apply_async(args=[client_id, params["definition_id"],
-                                                          build_id, params["to_format"],
-                                                          params["container_name"],
-                                                          str(uuid.uuid4())])
+                        build_entry = select_by_column("build", definition_id=params["definition_id"],
+                                                       container_type=params["to_format"])
+                        if build_entry is not None and len(build_entry) == 1:
+                            build_entry = build_entry[0]
+                            build_id = build_entry["build_id"]
+                            build_entry["build_status"] = "pending"
+                            update_table_entry("build", build_id, **build_entry)
+                        else:
+                            build_id = str(uuid.uuid4())
+                            build_entry = build_schema
+                            build_entry["build_id"] = build_id if build_id is not None else str(uuid.uuid4())
+                            build_entry["container_name"] = params["container_name"]
+                            build_entry["definition_id"] = params["definition_id"]
+                            build_entry["container_type"] = params["to_format"]
+                            build_entry["container_owner"] = client_id
+                            build_entry["build_status"] = "pending"
+                            create_table_entry("build", **build_entry)
+
+                        build_container.apply_async(args=[build_entry, params["to_format"],
+                                                          params["container_name"]])
                         return build_id
                 else:
                     abort(400, "No definition DB entry for {}".format(params["definition_id"]))
@@ -139,7 +154,7 @@ def pull():
                                          build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif"))
                 if os.path.exists(file_name):
                     os.remove(file_name)
-                print(e)
+                print("Exception {}".format(e))
                 abort(400, "Failed to pull {}".format(build_id))
         else:
             abort(400, "No build ID")

@@ -220,15 +220,12 @@ def convert_definition_file(definition_id, singularity_def_name=None):
 
 
 @celery_app.task(bind=True, default_retry_delay=10, max_retries=1)
-def build_container(self, owner_id, definition_id, build_id, to_format, container_name,
-                    thread_id):
+def build_container(self, build_entry, to_format, container_name):
     """Automated pipeline for building a recipe file from the
     definition db to a container.
 
     Parameters:
-    owner_id (str): ID of definition file owner as returned by Globus Auth.
-    token introspection.
-    definition_id (str): ID of definition db entry to build from.
+    build_entry (dict): Build entry from PostgreSQl of container to build.
     to_format (str): Format of container to build. Either "singularity"
     or "docker". If "docker", the recipe type must be a Dockerfile0.
     container_name (str): Name to give the container or path for path for
@@ -241,24 +238,9 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
     failed to build.
     """
     try:
-        assert to_format in ["docker", "singularity"], "{} is not a valid container format".format(to_format)
-
+        definition_id = build_entry["definition_id"]
+        build_id = build_entry["build_id"]
         definition_entry = select_by_column("definition", definition_id=definition_id)[0]
-        build_entry = select_by_column("build", definition_id=definition_id, container_type=to_format)
-        if build_entry is not None and len(build_entry) == 1:
-            build_entry = build_entry[0]
-            build_id = build_entry["build_id"]
-            build_entry["build_status"] = "pending"
-            update_table_entry("build", build_id, **build_entry)
-        else:
-            build_entry = build_schema
-            build_entry["build_id"] = build_id if build_id is not None else str(uuid.uuid4())
-            build_entry["container_name"] = container_name
-            build_entry["definition_id"] = definition_id
-            build_entry["container_type"] = to_format
-            build_entry["container_owner"] = owner_id
-            build_entry["build_status"] = "pending"
-            create_table_entry("build", **build_entry)
 
         logging.info("Created build entry for {}".format(build_id))
 
@@ -268,13 +250,8 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
 
         update_table_entry("build", build_id, **{"build_status": "building"})
         if to_format == "docker":
-            logging.info("{} {} {} {} {}".format(owner_id, definition_id, build_id, to_format, container_name))
             t0 = time.time()
             docker_image = build_to_docker(definition_entry, container_name)
-            logging.info("THREAD: {}, Finished building {}: (ID {}) in {} seconds".format(thread_id,
-                                                                                          container_name,
-                                                                                          build_id,
-                                                                                          time.time() - t0))
             if docker_image:
                 docker_client = docker.from_env()
                 docker_image = docker_image[0]
@@ -290,6 +267,7 @@ def build_container(self, owner_id, definition_id, build_id, to_format, containe
                                                          "build_time": build_time,
                                                          "last_built": last_built,
                                                          "container_size": container_size})
+                logging.info("Built {} in {} seconds".format(build_id, time.time() - t0))
                 t0 = time.time()
                 logging.info("Pushing {}".format(build_id))
                 response = push_to_ecr(docker_image, build_id,
@@ -357,8 +335,7 @@ def pull_container(build_entry):
     (file obj.): File object of container.
     """
     build_id = build_entry["build_id"]
-    file_name = os.path.join("application/",
-                             build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif"))
+    file_name = build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif")
 
     try:
         if build_entry["container_type"] == "docker":

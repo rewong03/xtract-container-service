@@ -88,14 +88,15 @@ class XtractConnection:
         """
         url = "{}/pull".format(self.base_url)
         payload = {"build_id": build_id}
-        response = requests.post(url, json=payload, headers=self.headers)
+        response = requests.get(url, json=payload, headers=self.headers)
 
-        if isinstance(str, response):
-            return response
+        if isinstance(response.text, str):
+            return response.text
         else:
             with open(file_path, 'wb') as f:
-                f.write(response)
-                return "Success"
+                f.write(response.content)
+
+            return "Success"
 
     def repo2docker(self, container_name, git_repo=None, file_path=None):
         """Builds a Docker container from a git repository or .tar or .zip file.
