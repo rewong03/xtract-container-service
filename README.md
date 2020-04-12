@@ -36,7 +36,7 @@ These instructions will get the XCS application running on your local machine fo
         user=postgres
         password=YOUR_PASSWORD
 
-3. Create an AWS S3 bucket named `xtract-container-service`
+3. Create an AWS S3 bucket and a SQS queue named `xtract-container-service`
 
 ### Running XCS
 1. Save your Globus Auth. Client ID and Client Secret as environment variables:
@@ -51,10 +51,6 @@ These instructions will get the XCS application running on your local machine fo
 3. Start the application with root privelages:
         
         sudo flask run
-
-4. In a second terminal, start the Celery worker:
-
-        celery -A container_handler.celery_app worker --pool=gevent --concurrency=YOUR_MAX_THREADS
 
 5. Ensure the Docker daemon is running using `sudo dockerd` for Ubuntu or starting Docker Desktop for Mac.
 
@@ -82,7 +78,7 @@ These instructions will get the XCS application running on Ubuntu for production
         virtualenv venv
         source venv/bin/activate
 
-3. Create a symbolic link in the `/var/www/html folder` 
+3. Create a symbolic link to the `/var/www/html/flaskapp` folder 
         
         sudo ln -sT ~/xtrac-container-service /var/www/html/flaskapp
 

@@ -27,9 +27,9 @@ class TaskManager:
         """
         thread_id = str(uuid.uuid4())
         self.thread_status[thread_id] = "WORKING"
-        START_TIME = time.time()
+        start_time = time.time()
         while True:
-            if time.time() - START_TIME >= self.kill_time:
+            if time.time() - start_time >= self.kill_time:
                 break
             else:
                 task = get_message()
@@ -48,9 +48,11 @@ class TaskManager:
                                 break
                             except:
                                 attempt_num += 1
+                    elif function_name == "repo2docker_container":
+                        repo2docker_container(*args)
                     else:
                         break
-                    START_TIME = time.time()
+                    start_time = time.time()
                 else:
                     self.thread_status[thread_id] = "IDLE"
                     continue

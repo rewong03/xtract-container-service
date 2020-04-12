@@ -89,8 +89,7 @@ class XtractConnection:
         url = "{}/pull".format(self.base_url)
         payload = {"build_id": build_id}
         response = requests.get(url, json=payload, headers=self.headers)
-
-        if isinstance(response.text, str):
+        if response.headers["Content-Type"] == "text/html":
             return response.text
         else:
             with open(file_path, 'wb') as f:

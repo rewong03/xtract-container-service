@@ -282,7 +282,7 @@ def build_container(build_entry, to_format, container_name):
             else:
                 raise ValueError("Invalid Singularity container name")
             if singularity_image:
-                build_time = datetime.datetime.now()
+                build_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
                 last_built = build_entry["build_time"] if build_entry["build_time"] else None
                 image_size = os.path.getsize(container_name)
 
@@ -303,7 +303,6 @@ def build_container(build_entry, to_format, container_name):
                 raise ValueError("Failed to build singularity container")
 
     except Exception as e:
-        print("HERE")
         print("{}: {}".format(build_entry["build_id"], e))
         logging.error("Exception", exc_info=True)
 
@@ -352,8 +351,12 @@ def pull_container(build_entry):
         return None
 
 
-def repo2docker_container(self, client_id, build_id, target, container_name):
+def repo2docker_container(client_id, build_id, target, container_name):
     """Takes a .zip or .tar file object or git repo link and attempts to run repo2docker on it.
+
+    Note:
+    The definition information for a container will only be stored if the container successfully
+    builds.
 
     Parameters:
     target (file obj. or str.): A link to a github repository or a file object.
@@ -361,42 +364,51 @@ def repo2docker_container(self, client_id, build_id, target, container_name):
     """
     if isinstance(target, str) and target.startswith("https://github.com"):
         target_type = "git"
+        temp_dir = ""
         cmd = "jupyter-repo2docker --no-run --image-name {} {}".format(container_name, target)
     else:
-        if zipfile.is_zipfile(target):
+        file_obj = open(target, "rb")
+        if zipfile.is_zipfile(file_obj):
             target_type = ".zip"
-            with zipfile.ZipFile(target) as zip_obj:
+            with zipfile.ZipFile(file_obj) as zip_obj:
                 temp_dir = tempfile.mkdtemp()
                 zip_obj.extractall(path=temp_dir)
         else:
             try:
-                with tarfile.TarFile(fileobj=target) as tar_obj:
+                # For some reason literally any file will pass through this tarfile check
+                with tarfile.TarFile(fileobj=file_obj) as tar_obj:
                     temp_dir = tempfile.mkdtemp()
                     tar_obj.extractall(path=temp_dir)
+
+                if len(os.listdir(temp_dir)) == 0:
+                    os.removedirs(temp_dir)
+                    return "Failed"
                 target_type = ".tar"
-            except tarfile.TarError as e:
+            except tarfile.TarError:
+                os.remove(target)
                 return "Failed"
 
         cmd = "jupyter-repo2docker --no-run --image-name {} {}".format(container_name, temp_dir)
-
     build_entry = build_schema
     build_entry["build_id"] = build_id
     build_entry["container_name"] = container_name
     build_entry["container_type"] = "docker"
     build_entry["container_owner"] = client_id
     build_entry["build_status"] = "building"
-    build_entry["build_time"] = datetime.datetime.now()
+    build_entry["build_time"] = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
     create_table_entry("build", **build_entry)
 
     subprocess.call(cmd, shell=True)
-
     client = docker.from_env()
     try:
         docker_image = client.images.get(container_name)
         update_table_entry("build", build_id, build_status="pushing")
     except:
         update_table_entry("build", build_id, build_status="failed")
-        self.retry()
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+        if os.path.exists(target):
+            os.remove(target)
         return "Failed"
 
     definition_id = str(uuid.uuid4())
@@ -410,7 +422,7 @@ def repo2docker_container(self, client_id, build_id, target, container_name):
     if target_type == ".zip" or target_type == ".tar":
         s3 = boto3.client('s3')
 
-        s3.upload_fileobj(target, "xtract-container-service",
+        s3.upload_fileobj(file_obj, "xtract-container-service",
                           '{}/{}'.format(definition_id, container_name + target_type))
 
     for image in client.df()["Images"]:
@@ -429,8 +441,16 @@ def repo2docker_container(self, client_id, build_id, target, container_name):
         client.images.remove(response, force=True)
     else:
         client.images.remove(container_name, force=True)
-        self.retry()
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+        if os.path.exists(target):
+            os.remove(target)
         return "Failed"
+
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+    if os.path.exists(target):
+        os.remove(target)
 
     return build_id
 

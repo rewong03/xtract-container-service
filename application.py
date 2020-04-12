@@ -1,5 +1,7 @@
 import json
 import os
+import pickle
+import tempfile
 import uuid
 import boto3
 from flask import Flask, request, send_file, abort
@@ -159,8 +161,7 @@ def pull():
                     os.remove(file_name)
                 return response
             except Exception as e:
-                file_name = os.path.join("application/",
-                                         build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif"))
+                file_name = build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif")
                 if os.path.exists(file_name):
                     os.remove(file_name)
                 print("Exception {}".format(e))
@@ -187,20 +188,26 @@ def repo2docker():
         if request.method == "POST":
             build_id = str(uuid.uuid4())
 
-            #TODO: Try to allow users send filename separate from the container name. Currently the container name
-            # defaults to the filename because you can't send a file and json in one request.
             if request.json is not None and "git_repo" in request.json and "container_name" in request.json:
-                repo2docker_container.apply_async(args=[client_id, build_id,
-                                                        request.json["git_repo"], request.json["container_name"]])
+                put_message({"function_name": "repo2docker_container",
+                             "client_id": client_id, "build_id": build_id, "target": request.json["git_repo"],
+                             "container_name": request.json["container_name"]})
+                manager.start_thread()
                 return build_id
             elif 'file' in request.files:
                 file = request.files['file']
                 if file.filename == '':
                     abort(400, "No file selected")
-                if not(file.filename.endswith(".zip") or file.filename.endswith(".tar")):
-                    abort(400, "Unsopported file format")
                 if file:
-                    repo2docker_container.apply_async(args=[client_id, build_id, file, file.filename])
+                    file_path = tempfile.mkstemp()[1]
+                    print(file_path)
+                    with open(file_path, "wb") as f:
+                        f.write(file.read())
+
+                    put_message({"function_name": "repo2docker_container",
+                                 "client_id": client_id, "build_id": build_id, "target": file_path,
+                                 "container_name": file.filename})
+                    manager.start_thread()
                     return build_id
                 else:
                     return abort(400, "Failed to upload file")
