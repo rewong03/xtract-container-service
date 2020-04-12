@@ -1,3 +1,4 @@
+import os
 import logging
 import psycopg2
 import psycopg2.extras
@@ -20,9 +21,9 @@ BUILD_TABLE = {"build_id": "TEXT PRIMARY KEY",
 
 build_schema = dict(zip(BUILD_TABLE.keys(), [None] * len(BUILD_TABLE)))
 definition_schema = dict(zip(DEFINITION_TABLE.keys(), [None] * len(DEFINITION_TABLE)))
+PROJECT_ROOT = os.path.realpath(os.path.dirname(__file__)) + "/"
 
-
-def config(config_file='database.ini',
+def config(config_file=os.path.join(PROJECT_ROOT, 'database.ini'),
            section='postgresql'):
     """Reads PosrgreSQL credentials from a .ini file.
 
@@ -50,7 +51,7 @@ def config(config_file='database.ini',
     return credentials
 
 
-def create_connection(config_file='database.ini'):
+def create_connection(config_file=os.path.join(PROJECT_ROOT, 'database.ini')):
     """Creates a connection object to a PostgreSQL database.
 
     Parameters:

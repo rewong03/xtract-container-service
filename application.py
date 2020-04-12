@@ -13,7 +13,7 @@ from task_manager import TaskManager
 
 
 application = Flask(__name__)
-manager = TaskManager(max_threads=2, kill_time=20)
+manager = TaskManager(max_threads=2, kill_time=120)
 
 @application.before_first_request
 def config():

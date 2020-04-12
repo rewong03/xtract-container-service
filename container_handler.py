@@ -17,6 +17,7 @@ from spython.main.parse.writers import get_writer
 from pg_utils import definition_schema, build_schema, create_table_entry, update_table_entry, select_by_column
 from sqs_queue_utils import put_message
 
+PROJECT_ROOT = os.path.realpath(os.path.dirname(__file__)) + "/"
 
 def pull_s3_dir(definition_id):
     """Pulls a directory of files from a definition_id folder in our
@@ -27,9 +28,9 @@ def pull_s3_dir(definition_id):
     """
     bucket = boto3.resource('s3').Bucket("xtract-container-service")
     for object in bucket.objects.filter(Prefix=definition_id):
-        if not os.path.exists("./" + os.path.dirname(object.key)):
-            os.makedirs("./" + os.path.dirname(object.key))
-        bucket.download_file(object.key, "./" + object.key)
+        if not os.path.exists(PROJECT_ROOT + os.path.dirname(object.key)):
+            os.makedirs(os.path.join(PROJECT_ROOT, os.path.dirname(object.key)))
+        bucket.download_file(object.key, PROJECT_ROOT + object.key)
 
 
 def ecr_login():
@@ -92,11 +93,11 @@ def build_to_singularity(definition_entry, container_location):
     """
     definition_id = definition_entry["definition_id"]
     pull_s3_dir(definition_id)
-    Client.load("./" + definition_id)
-    Client.build(image=os.path.join("./", container_location))
-    shutil.rmtree("./" + definition_id)
+    Client.load(PROJECT_ROOT + definition_id)
+    Client.build(image=os.path.join(PROJECT_ROOT, container_location), sudo=False)
+    shutil.rmtree(PROJECT_ROOT + definition_id)
     #TODO Find a better way to error check
-    if os.path.exists(container_location):
+    if os.path.exists(PROJECT_ROOT + container_location):
         logging.info("Successfully built {}".format(container_location))
         return container_location
     else:
@@ -118,14 +119,15 @@ def build_to_docker(definition_entry, image_name):
 
     try:
         docker_client = docker.from_env()
-        image = docker_client.images.build(path="./{}".format(definition_id),
+        image = docker_client.images.build(path="{}/{}".format(PROJECT_ROOT, definition_id),
                                            tag=image_name, rm=True, forcerm=True)
         return image
-    except:
+    except Exception as e:
+        print("ERROR {}".format(e))
         return None
     finally:
-        if os.path.exists(definition_id):
-            shutil.rmtree("./" + definition_id)
+        if os.path.exists(PROJECT_ROOT + definition_id):
+            shutil.rmtree(PROJECT_ROOT + definition_id)
 
 
 #TODO: Find a better way to name converted Singularity definition files
@@ -230,6 +232,7 @@ def build_container(build_entry, to_format, container_name):
     failed to build.
     """
     try:
+        print(1)
         definition_id = build_entry["definition_id"]
         build_id = build_entry["build_id"]
         definition_entry = select_by_column("definition", definition_id=definition_id)[0]
@@ -243,8 +246,10 @@ def build_container(build_entry, to_format, container_name):
         update_table_entry("build", build_id, **{"build_status": "building"})
         if to_format == "docker":
             t0 = time.time()
+            print(2)
             docker_image = build_to_docker(definition_entry, container_name)
             if docker_image:
+                print(3)
                 docker_client = docker.from_env()
                 docker_image = docker_image[0]
                 last_built = build_entry["build_time"] if build_entry["build_time"] else None
@@ -259,14 +264,17 @@ def build_container(build_entry, to_format, container_name):
                                                          "build_time": build_time,
                                                          "last_built": last_built,
                                                          "container_size": container_size})
+                print(4)
                 logging.info("Built {} in {} seconds".format(build_id, time.time() - t0))
                 t0 = time.time()
                 logging.info("Pushing {}".format(build_id))
                 response = push_to_ecr(docker_image, build_id,
                                        container_name)
+                print(5)
                 logging.info("Finished pushing {} in {}".format(build_id,
                                                                 time.time() - t0))
                 if response is not None:
+                    print(6)
                     update_table_entry("build", build_id, **{"build_status": "success"})
                     docker_client.images.remove(response, force=True)
                     return build_id
@@ -277,14 +285,16 @@ def build_container(build_entry, to_format, container_name):
                 raise ValueError("Failed to build docker container")
 
         elif to_format == "singularity":
+            print(2)
             if container_name.endswith(".sif"):
                 singularity_image = build_to_singularity(definition_entry, container_name)
             else:
                 raise ValueError("Invalid Singularity container name")
             if singularity_image:
+                print(3)
                 build_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
                 last_built = build_entry["build_time"] if build_entry["build_time"] else None
-                image_size = os.path.getsize(container_name)
+                image_size = os.path.getsize(PROJECT_ROOT + container_name)
 
                 build_entry["build_status"] = "pushing"
                 update_table_entry("build", build_id, **{"build_status": "pushing",
@@ -292,17 +302,18 @@ def build_container(build_entry, to_format, container_name):
                                                          "last_built": last_built,
                                                          "container_size": image_size})
                 s3 = boto3.client("s3")
-                s3.upload_fileobj(open(singularity_image, 'rb'),
+                s3.upload_fileobj(open(PROJECT_ROOT + singularity_image, 'rb'),
                                   "xtract-container-service",
                                   "{}/{}".format(build_id,
                                                  os.path.basename(container_name)))
                 update_table_entry("build", build_id, **{"build_status": "success"})
-                os.remove(container_name)
+                os.remove(PROJECT_ROOT + container_name)
                 return build_id
             else:
                 raise ValueError("Failed to build singularity container")
 
     except Exception as e:
+        print("HERE")
         print("{}: {}".format(build_entry["build_id"], e))
         logging.error("Exception", exc_info=True)
 
@@ -324,19 +335,22 @@ def pull_container(build_entry):
     Returns:
     (file obj.): File object of container.
     """
+    print("PULL_CONTAINER")
+    print(1)
     build_id = build_entry["build_id"]
-    file_name = build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif")
-
+    file_name = PROJECT_ROOT + build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif")
+    print(2)
     try:
         if build_entry["container_type"] == "docker":
+            print(3)
             registry = ecr_login()[8:] + "/" + build_id
             docker_client = docker.from_env()
             image = docker_client.images.pull(registry, tag=build_entry["container_name"])
-
+            print(4)
             with open(file_name, "wb") as f:
                 for chunk in image.save():
                     f.write(chunk)
-
+            print(5)
             return file_name
         elif build_entry["container_type"] == "singularity":
             s3 = boto3.client('s3')
