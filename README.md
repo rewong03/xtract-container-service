@@ -28,7 +28,7 @@ These instructions will get the XCS application running on your local machine fo
 
         aws configure
 
-2. Next, create a PostgreSQL database in AWS RDS and store the following in a file named `database.ini:`
+2. Next, create a PostgreSQL database in AWS RDS and store the following in a file named `database.ini`:
 
         [postgresql]
         host=YOUR_HOST_ADRESS
@@ -36,7 +36,7 @@ These instructions will get the XCS application running on your local machine fo
         user=postgres
         password=YOUR_PASSWORD
 
-3. Create an AWS S3 bucket and a SQS queue named `xtract-container-service`
+3. Create an AWS S3 bucket and a SQS queue named `xtract-container-service`:
 
 ### Running XCS
 1. Save your Globus Auth. Client ID and Client Secret as environment variables:
@@ -66,10 +66,10 @@ These instructions will get the XCS application running on Ubuntu for production
 - PostgreSQL
 - Python3
 
-### Installation and Apache setup
-1. Install Apache.
+### Installation and Configuration
+1. Install Apache:
         
-        sudo apt install apache2-dev libapache2-mod-wsgi-py3
+        sudo apt install apache2 libapache2-mod-wsgi-py3
 
 2. Clone this repository and activate a virtual environment:  
 
@@ -77,14 +77,18 @@ These instructions will get the XCS application running on Ubuntu for production
         cd xtract-container-service
         virtualenv venv
         source venv/bin/activate
-
-3. Create a symbolic link to the `/var/www/html/flaskapp` folder 
         
-        sudo ln -sT ~/xtrac-container-service /var/www/html/flaskapp
+3. Configure the AWS CLI:
+        
+        aws configure
 
-4. In `flaskapp.wsgi`, set your Globus Auth and AWS credentials.
+4. Create a symbolic link to the `/var/www/html/flaskapp` folder: 
+        
+        sudo ln -sT ~/xtract-container-service /var/www/html/flaskapp
 
-5. In `etc/apache2/sites-enabled/000-default.conf`, add the following after the `DocumentRoot /var/www/html` line:
+5. In `flaskapp.wsgi`, set your Globus Auth and AWS credentials.
+
+6. In `/etc/apache2/sites-enabled/000-default.conf`, add the following after the `DocumentRoot /var/www/html` line:
         
         WSGIDaemonProcess flaskapp threads=5 python-path=/var/www/html/flaskapp/venv/lib/python3.6/site-packages
         WSGIScriptAlias / /var/www/html/flaskapp/flaskapp.wsgi
@@ -97,18 +101,13 @@ These instructions will get the XCS application running on Ubuntu for production
             Allow from all
         </Directory>
 
-6. Add [this](https://github.com/celery/celery/blob/master/extra/generic-init.d/celeryd) to a script  named `celeryd` in `/etc/init.d/` and make it executable:
-
-7. Add [this](http://docs.celeryproject.org/en/latest/userguide/daemonizing.html#init-script-celeryd) to a script named `celeryd` in `/etc/default' and change the following values:
+7. Allow Apache to run Docker as a non-root user:
         
-        CELERY_BIN="/var/www/html/flaskapp/venv/bin/celery"
-        CELERY_APP="container_handler.celery_app"
-        CELERYD_CHDIR="/var/www/html/flaskapp/"
-        CELERYD_OPTS="--pool=gevent --concurrency=YOUR_CONCURRENCY"
-        CELERYD_USER="root"
-        CELERYD_GROUP="root"
+        sudo groupadd docker
+        sudo usermod -aG docker www-data
+        sudo newgrp docker 
 
-8. Restart Apache.
+8. Restart Apache:
         
         sudo service apache2 restart
         
@@ -117,12 +116,7 @@ These instructions will get the XCS application running on Ubuntu for production
 1. In one terminal, ensure that Docker is stopped and start the Docker daemon:
         
         sudo systemctl stop docker
-        sudo dockerd
-
-2. In another terminal, start the Celery daemon:
-        
-        sudo /etc/init.d/celeryd start
-        
+        sudo dockerd        
 
 ## Interacting with the server
 XCS is a REST API so all interactions can be made with Python's request library. Examples of how to make requests can be found in `app_demo.ipynb`

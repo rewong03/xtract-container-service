@@ -19,6 +19,7 @@ from sqs_queue_utils import put_message
 
 PROJECT_ROOT = os.path.realpath(os.path.dirname(__file__)) + "/"
 
+
 def pull_s3_dir(definition_id):
     """Pulls a directory of files from a definition_id folder in our
     S3 bucket.
@@ -232,7 +233,6 @@ def build_container(build_entry, to_format, container_name):
     failed to build.
     """
     try:
-        print(1)
         definition_id = build_entry["definition_id"]
         build_id = build_entry["build_id"]
         definition_entry = select_by_column("definition", definition_id=definition_id)[0]
@@ -246,10 +246,8 @@ def build_container(build_entry, to_format, container_name):
         update_table_entry("build", build_id, **{"build_status": "building"})
         if to_format == "docker":
             t0 = time.time()
-            print(2)
             docker_image = build_to_docker(definition_entry, container_name)
             if docker_image:
-                print(3)
                 docker_client = docker.from_env()
                 docker_image = docker_image[0]
                 last_built = build_entry["build_time"] if build_entry["build_time"] else None
@@ -264,17 +262,14 @@ def build_container(build_entry, to_format, container_name):
                                                          "build_time": build_time,
                                                          "last_built": last_built,
                                                          "container_size": container_size})
-                print(4)
                 logging.info("Built {} in {} seconds".format(build_id, time.time() - t0))
                 t0 = time.time()
                 logging.info("Pushing {}".format(build_id))
                 response = push_to_ecr(docker_image, build_id,
                                        container_name)
-                print(5)
                 logging.info("Finished pushing {} in {}".format(build_id,
                                                                 time.time() - t0))
                 if response is not None:
-                    print(6)
                     update_table_entry("build", build_id, **{"build_status": "success"})
                     docker_client.images.remove(response, force=True)
                     return build_id
@@ -285,13 +280,11 @@ def build_container(build_entry, to_format, container_name):
                 raise ValueError("Failed to build docker container")
 
         elif to_format == "singularity":
-            print(2)
             if container_name.endswith(".sif"):
                 singularity_image = build_to_singularity(definition_entry, container_name)
             else:
                 raise ValueError("Invalid Singularity container name")
             if singularity_image:
-                print(3)
                 build_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
                 last_built = build_entry["build_time"] if build_entry["build_time"] else None
                 image_size = os.path.getsize(PROJECT_ROOT + container_name)
@@ -313,8 +306,6 @@ def build_container(build_entry, to_format, container_name):
                 raise ValueError("Failed to build singularity container")
 
     except Exception as e:
-        print("HERE")
-        print("{}: {}".format(build_entry["build_id"], e))
         logging.error("Exception", exc_info=True)
 
         if build_entry is not None and len(build_entry) == 1:
@@ -335,22 +326,16 @@ def pull_container(build_entry):
     Returns:
     (file obj.): File object of container.
     """
-    print("PULL_CONTAINER")
-    print(1)
     build_id = build_entry["build_id"]
     file_name = PROJECT_ROOT + build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif")
-    print(2)
     try:
         if build_entry["container_type"] == "docker":
-            print(3)
             registry = ecr_login()[8:] + "/" + build_id
             docker_client = docker.from_env()
             image = docker_client.images.pull(registry, tag=build_entry["container_name"])
-            print(4)
             with open(file_name, "wb") as f:
                 for chunk in image.save():
                     f.write(chunk)
-            print(5)
             return file_name
         elif build_entry["container_type"] == "singularity":
             s3 = boto3.client('s3')
@@ -359,12 +344,15 @@ def pull_container(build_entry):
                              file_name)
             return file_name
     except Exception as e:
-        print("{}: {}".format(build_id, e))
         if os.path.exists(file_name):
             os.remove(file_name)
         return None
 
 
+# When deploying this application with Apache you have to modify the cmd variable to have more parameters.
+# Apache uses the www-data user when running which causes issues with repo2docker, so you have to add
+# "--user-id YOUD_ID --user-name YOUR_USER" where YOUR_ID and YOUR_USER aren't preexisting on the system.
+# Check the repo2docker documentation for more information.
 def repo2docker_container(client_id, build_id, target, container_name):
     """Takes a .zip or .tar file object or git repo link and attempts to run repo2docker on it.
 
@@ -470,32 +458,4 @@ def repo2docker_container(client_id, build_id, target, container_name):
 
 
 if __name__ == "__main__":
-    from task_manager import TaskManager
-
-    manager = TaskManager(max_threads=2, idle_time=10, kill_time=20)
-    function_name = "build_container"
-    build_entry = select_by_column("build", build_id="48233d24-de38-45d3-988c-25285bc2a7ad")[0]
-    print(put_message({"function_name": function_name,
-                       "build_entry": build_entry,
-                       "to_format": "docker",
-                       "container_name": "my_thread_test"}))
-    print("Continuing")
-    function_name = "build_container"
-    build_entry = select_by_column("build", build_id="aab75744-597e-4bdb-93ad-6e06b139bafd")[0]
-    print(put_message({"function_name": function_name,
-                       "build_entry": build_entry,
-                       "to_format": "docker",
-                       "container_name": "my_thread_test"}))
-    manager.start_thread()
-    manager.start_thread()
-    manager.start_thread()
-
-    for i in range(1000):
-        print(manager.thread_status)
-        time.sleep(2)
-
-    # for i in range(10):
-    #     x = threading.Thread(target=test, args=(i,))
-    #     x.start()
-    # print('cool')
-    pass
+    print(PROJECT_ROOT)

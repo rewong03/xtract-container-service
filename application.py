@@ -1,12 +1,11 @@
 import json
 import os
-import pickle
 import tempfile
 import uuid
 import boto3
 from flask import Flask, request, send_file, abort
 from globus_sdk import ConfidentialAppAuthClient
-from container_handler import pull_container, repo2docker_container
+from container_handler import pull_container
 from pg_utils import table_exists, prep_database, create_table_entry, select_by_column, update_table_entry, build_schema
 from sqs_queue_utils import put_message
 from task_manager import TaskManager
@@ -14,6 +13,7 @@ from task_manager import TaskManager
 
 application = Flask(__name__)
 manager = TaskManager(max_threads=2, kill_time=120)
+
 
 @application.before_first_request
 def config():
@@ -200,7 +200,6 @@ def repo2docker():
                     abort(400, "No file selected")
                 if file:
                     file_path = tempfile.mkstemp()[1]
-                    print(file_path)
                     with open(file_path, "wb") as f:
                         f.write(file.read())
 
