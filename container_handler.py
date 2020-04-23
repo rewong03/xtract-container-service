@@ -72,12 +72,18 @@ def push_to_ecr(docker_image, build_id, image_name):
     docker_client = docker.from_env()
     docker_image.tag(registry,
                      tag=image_name)
-    response = docker_client.images.push(registry, stream=False)
-    # TODO Find a better way to check if the image was successfully pushed
-    if "sha256" in response:
-        return docker_image.id[7:]
-    else:
-        raise ValueError("Failed to push")
+    try:
+        response = docker_client.images.push(registry, stream=False)
+        # TODO Find a better way to check if the image was successfully pushed
+        if "sha256" in response:
+            return docker_image.id[7:]
+        else:
+            raise ValueError("Failed to push")
+    except Exception as e:
+        print('here')
+        print(docker_iamge.id)
+        docker_client.images.remove(docker_image.id)
+        raise e
 
 
 def build_to_singularity(definition_entry, container_location):
@@ -307,6 +313,9 @@ def build_container(build_entry, to_format, container_name):
 
     except Exception as e:
         logging.error("Exception", exc_info=True)
+        
+        client = docker.from_env()
+        client.image.prune()
 
         if build_entry is not None and len(build_entry) == 1:
             build_entry["build_status"] = "failed"
@@ -427,34 +436,38 @@ def repo2docker_container(client_id, build_id, target, container_name):
         s3.upload_fileobj(file_obj, "xtract-container-service",
                           '{}/{}'.format(definition_id, container_name + target_type))
 
-    for image in client.df()["Images"]:
-        if any(list(map(lambda x: container_name in x, image["RepoTags"]))):
-            container_size = image["Size"]
-            break
-        else:
-            container_size = None
+    #for image in client.df()["Images"]:
+        #if any(list(map(lambda x: container_name in x, image["RepoTags"]))):
+            #container_size = image["Size"]
+            #break
+        #else:
+            #container_size = None
 
-    update_table_entry("build", build_id, definition_id=definition_id, container_size=container_size)
-
-    response = push_to_ecr(docker_image, build_id, container_name)
-
-    if response is not None:
+    update_table_entry("build", build_id, definition_id=definition_id)
+    
+    try:
+        #raise Exception("reeee")
+        response = push_to_ecr(docker_image, build_id, container_name)
         update_table_entry("build", build_id, **{"build_status": "success"})
         client.images.remove(response, force=True)
-    else:
-        client.images.remove(container_name, force=True)
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+        if os.path.exists(target):
+            os.remove(target)
+        client.images.prune()
+        return build_id
+    except Exception as e:
+        print('1')
+        #client.images.remove(container_name, force=True)
+        update_table_entry("build", build_id, **{"build_status": "failed"})
+        print('2')
+        client.images.prune()
+        print('3')
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
         if os.path.exists(target):
             os.remove(target)
         return "Failed"
-
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
-    if os.path.exists(target):
-        os.remove(target)
-
-    return build_id
 
 
 if __name__ == "__main__":
