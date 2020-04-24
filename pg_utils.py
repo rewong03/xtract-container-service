@@ -45,8 +45,7 @@ def config(config_file=os.path.join(PROJECT_ROOT, 'database.ini'),
             credentials[param[0]] = param[1]
 
     else:
-        raise Exception('Section {} not found in the {} file'.format(section,
-                                                                     config_file))
+        raise Exception(f"Section {section} not found in the {config_file} file")
 
     return credentials
 
@@ -97,8 +96,8 @@ def prep_database():
     for column in BUILD_TABLE:
         build_table_columns.append(column + " " + BUILD_TABLE[column])
 
-    definition_command = """CREATE TABLE definition ({})""".format(", ".join(definition_table_columns))
-    build_command = """CREATE TABLE build ({})""".format(", ".join(build_table_columns))
+    definition_command = f"""CREATE TABLE definition ({", ".join(definition_table_columns)})"""
+    build_command = f"""CREATE TABLE build ({", ".join(build_table_columns)})"""
 
     cur.execute(definition_command)
     cur.execute(build_command)
@@ -131,8 +130,7 @@ def create_table_entry(table_name, **columns):
 
     assert set(list(columns.keys())) <= set(table), "Column does not exist in table"
 
-    statement = """INSERT INTO {} VALUES {}""".format(table_name,
-                                                      "(" + ", ".join(["%s"] * len(table)) + ")")
+    statement = f"""INSERT INTO {table_name} VALUES {"(" + ", ".join(["%s"] * len(table)) + ")"}"""
 
     for column in table:
         if column in columns:
@@ -145,7 +143,7 @@ def create_table_entry(table_name, **columns):
     cur = conn.cursor()
     cur.execute(statement, entry)
     conn.commit()
-    logging.info("Successfully created entry to {} table".format(table_name))
+    logging.info(f"Successfully created entry to {table_name} table")
 
 
 def update_table_entry(table_name, id, **columns):
@@ -173,15 +171,14 @@ def update_table_entry(table_name, id, **columns):
     columns = " = %s,".join(columns) + " = %s"
     values.append(id)
 
-    statement = """UPDATE {}
-                SET {}
-                WHERE {}_id = %s""".format(table_name, columns, table_name)
+    statement = f"""UPDATE {table_name}
+                SET {columns}
+                WHERE {table_name}_id = %s"""
     conn = create_connection()
     cur = conn.cursor()
     cur.execute(statement, tuple(values))
     conn.commit()
-    logging.info("Successfully inserted %s into entry with id %s",
-                 values[:-1], id)
+    logging.info(f"Successfully inserted {values[:-1]} into entry with id {id}.")
 
 
 def select_all_rows(table_name):
@@ -206,7 +203,7 @@ def select_all_rows(table_name):
 
     conn = create_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM {}".format(table_name))
+    cur.execute(f"SELECT * FROM {table_name}")
 
     results = cur.fetchall()
 
@@ -241,14 +238,14 @@ def search_array(table_name, array, value):
 
     conn = create_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM {} WHERE '{}'=ANY({})".format(table_name, value, array))
+    cur.execute(f"SELECT * FROM {table_name} WHERE '{value}'=ANY({array})")
 
     results = cur.fetchall()
 
     for result in results:
         rows.append(dict(zip(table, result)))
 
-    logging.info("Successfully queried {} array".format(array))
+    logging.info(f"Successfully queried {array} array")
 
     return rows
 
@@ -282,8 +279,7 @@ def select_by_column(table_name, **columns):
 
     conn = create_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM {} WHERE {}".format(table_name,
-                                                   "=%s AND ".join(columns) + "=%s"),
+    cur.execute(f"""SELECT * FROM {table_name} WHERE {"=%s AND ".join(columns) + "=%s"}""",
                 values)
 
     results = cur.fetchall()

@@ -7,9 +7,9 @@ class XtractConnection:
 
     Parameters:
     funcx_token (str): Token for FuncX retrieved through Globus Auth.
-    base_url (str): URL of
+    base_url (str): URL of server running XCS.
     """
-    def __init__(self, funcx_token, base_url="http://ec2-54-213-90-206.us-west-2.compute.amazonaws.com"):
+    def __init__(self, funcx_token, base_url="http://149.165.168.132"):
         self.headers = {'Authorization': f"Bearer {funcx_token}"}
         self.base_url = base_url
 
@@ -23,7 +23,7 @@ class XtractConnection:
         Returns:
         definition_id (str): ID of the uploaded definition file or an error message.
         """
-        url = "{}/upload_def_file".format(self.base_url)
+        url = f"{self.base_url}/upload_def_file"
         payload = {"file": (file_name, open(file_path, "rb"))}
         response = requests.post(url, files=payload, headers=self.headers)
         definition_id = response.text
@@ -45,7 +45,7 @@ class XtractConnection:
         Returns:
         build_id (str): ID of the container being built or an error message.
         """
-        url = "{}/build".format(self.base_url)
+        url = f"{self.base_url}/build"
         payload = {"definition_id": definition_id, "to_format": to_format, "container_name": container_name}
         response = requests.post(url, json=payload, headers=self.headers)
         build_id = response.text
@@ -61,7 +61,7 @@ class XtractConnection:
         Returns:
         status (json or str.): Json of build entry or an error message
         """
-        url = "{}/build".format(self.base_url)
+        url = f"{self.base_url}/build"
         payload = {"build_id": build_id}
         response = requests.get(url, json=payload, headers=self.headers)
 
@@ -86,7 +86,7 @@ class XtractConnection:
         Returns:
         (str): A success or error message.
         """
-        url = "{}/pull".format(self.base_url)
+        url = f"{self.base_url}/pull"
         payload = {"build_id": build_id}
         response = requests.get(url, json=payload, headers=self.headers)
         if response.headers["Content-Type"] == "text/html":
@@ -108,7 +108,7 @@ class XtractConnection:
         Return:
         (str): build_id of container or an error message.
         """
-        url = "{}/repo2docker".format(self.base_url)
+        url = f"{self.base_url}/repo2docker"
 
         if git_repo and file_path:
             return "Can only upload a git repository OR a file"
@@ -126,3 +126,22 @@ class XtractConnection:
             return build_id
         else:
             return "No git repository or file path"
+
+    def convert(self, definition_id, singularity_def_name=None):
+        """Converts a Dockerfile to a Singularity recipe or vice versa.
+
+        Parameters:
+        definition_id (str): Definition entry ID of file to convert.
+        singularity_def_name (str): Name to give to Singularity recipe files
+        converted from Dockerfiles. A random name is chosen if no name is supplied.
+
+        Returns:
+        (str): The ID of the new definition entry or an error message.
+        """
+        url = f"{self.base_url}/convert"
+
+        payload = {"definition_id": definition_id, "singularity_def_name": singularity_def_name}
+        response = requests.post(url, json=payload, headers=self.headers)
+        new_definition_id = response.text
+
+        return new_definition_id

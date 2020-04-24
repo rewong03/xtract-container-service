@@ -1,13 +1,12 @@
-import sys
 import json
 import os
 import tempfile
 import uuid
 import boto3
-from flask import Flask, request, send_file, abort
+from flask import abort, Flask, request, send_file
 from globus_sdk import ConfidentialAppAuthClient
-from container_handler import pull_container
-from pg_utils import table_exists, prep_database, create_table_entry, select_by_column, update_table_entry, build_schema
+from container_handler import convert_definition_file, pull_container
+from pg_utils import build_schema, create_table_entry, prep_database, select_by_column, table_exists, update_table_entry
 from sqs_queue_utils import put_message
 from task_manager import TaskManager
 
@@ -62,7 +61,7 @@ def upload_file():
             s3 = boto3.client('s3')
 
             s3.upload_fileobj(file, "xtract-container-service",
-                              '{}/{}'.format(definition_id, filename))
+                              f'{definition_id}/{filename}')
             return definition_id
         else:
             return abort(400, "Failed to upload file")
@@ -117,9 +116,9 @@ def build():
                         manager.start_thread()
                         return build_id
                 else:
-                    abort(400, "No definition DB entry for {}".format(params["definition_id"]))
+                    abort(400, f"""No definition DB entry for {params["definition_id"]}""")
             else:
-                abort(400, "Missing {} parameters".format(required_params.difference(set(params.keys()))))
+                abort(400, f"Missing {set(params.keys())} parameters")
         elif request.method == "GET":
             build_entry = select_by_column("build", container_owner=client_id,
                                            build_id=request.json["build_id"])
@@ -165,8 +164,8 @@ def pull():
                 file_name = build_id + (".tar" if build_entry["container_type"] == "docker" else ".sif")
                 if os.path.exists(file_name):
                     os.remove(file_name)
-                print("Exception {}".format(e))
-                abort(400, "Failed to pull {}".format(build_id))
+                print(f"Exception {e}")
+                abort(400, f"Failed to pull {build_id}")
         else:
             abort(400, "No build ID")
     else:
@@ -221,6 +220,32 @@ def repo2docker():
                 return build_entry[0]
             else:
                 abort(400, "Build ID not valid")
+    else:
+        abort(400, "Failed to authenticate user")
+
+
+@application.route('/convert', methods=["POST"])
+def convert():
+    if 'Authorization' not in request.headers:
+        abort(401, 'You must be logged in to perform this function.')
+
+    token = request.headers.get('Authorization')
+    token = str.replace(str(token), 'Bearer ', '')
+    conf_app = ConfidentialAppAuthClient(os.environ["GL_CLIENT"], os.environ["GL_CLIENT_SECRET"])
+    intro_obj = conf_app.oauth2_token_introspect(token)
+
+    if "client_id" in intro_obj:
+        client_id = str(intro_obj["client_id"])
+
+        definition_entry = select_by_column("definition", definition_id=request.json["definition_id"])
+        if definition_entry is not None and len(definition_entry) == 1:
+            definition_entry = definition_entry[0]
+            if definition_entry["definition_owner"] != client_id:
+                abort(400, "You don't have permission to use this definition file")
+            else:
+                return convert_definition_file(definition_entry)
+        else:
+            abort(400, "Definition ID not valid")
     else:
         abort(400, "Failed to authenticate user")
 
