@@ -1,0 +1,27 @@
+Bootstrap: docker
+From: python:latest
+%files
+xtract_matio_main.py /
+test_file.py /
+%labels
+MAINTAINER Globus Labs, University of Chicago (Ryan Wong rewong03@gmail.com; Tyler Skluzacek skluzacek@uchicago.edu)
+%post
+
+
+git clone -b match_adapter https://github.com/materials-data-facility/MaterialsIO.git \
+&& cd MaterialsIO && pip install -e . \
+&& pip install -r requirements.txt \
+&& cd
+
+# Get the Xtract code here so we have access to exceptions. 
+git clone https://github.com/xtracthub/xtracthub-service.git \
+&& cp xtracthub-service/exceptions.py /
+
+container_version=14
+
+%environment
+export container_version=14
+%runscript
+exec /bin/bash "$@"
+%startscript
+exec /bin/bash "$@"
