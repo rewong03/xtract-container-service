@@ -1,8 +1,10 @@
-**/__pycache__
+**/build
+**/dist
 **/.idea
 **/.ipynb_checkpoints
-**/blah
+**/__pycache__
 **/venv
+**/xtracthub.egg-info
 *.db
 *.log
 *.def

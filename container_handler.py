@@ -310,10 +310,7 @@ def build_container(build_entry, to_format, container_name):
 
     except Exception as e:
         logging.error("Exception", exc_info=True)
-
-        if build_entry is not None and len(build_entry) == 1:
-            build_entry["build_status"] = "failed"
-            update_table_entry("build", build_entry["build_id"], **{"build_status": "failed"})
+        update_table_entry("build", build_entry["build_id"], **{"build_status": "failed"})
 
         raise e
 

@@ -1,3 +1,4 @@
+import docker
 import threading
 import time
 import uuid
@@ -6,7 +7,7 @@ from sqs_queue_utils import get_message
 
 
 class TaskManager:
-    """Manager for threads and tasks.
+    """Manager for threads and various tasks.
 
     Parameters:
     max_threads (int): Maximum number of threads to run.
@@ -62,6 +63,32 @@ class TaskManager:
         self.total_threads -= 1
         del self.thread_status[thread_id]
         return
+
+    def prune_task(self, prune_time):
+        """Task that periodically runs pruning commands.
+
+        Parameters:
+        prune_time (int): Amount of time to wait before pruning containers.
+        """
+        thread_id = f"PRUNE_THREAD_{str(uuid.uuid4())}"
+        self.thread_status[thread_id] = "WORKING"
+        self.total_threads += 1
+        client = docker.from_env()
+
+        while True:
+            print('here')
+            self.thread_status[thread_id] = "WORKING"
+            client.images.prune()
+            self.thread_status[thread_id] = "IDLE"
+            time.sleep(prune_time)
+
+    def start_prune_thread(self, prune_time):
+        """Starts a daemon thread running the prune_task method.
+
+        Parameters:
+        prune_time (int): Amount of time to wait before pruning containers.
+        """
+        threading.Thread(target=self.prune_task, args=(prune_time,), daemon=True).start()
 
     def start_thread(self):
         """Starts a thread to do work.

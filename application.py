@@ -13,6 +13,14 @@ from task_manager import TaskManager
 
 application = Flask(__name__)
 manager = TaskManager(max_threads=10, kill_time=120)
+manager.start_prune_thread(60)
+
+
+@application.route("/change_thread", methods=["POST"])
+def change_thread():
+    global manager
+    manager = TaskManager(max_threads=request.json["threads"])
+    return "k"
 
 
 @application.before_first_request
@@ -28,7 +36,8 @@ def thread():
 
 @application.route('/')
 def index():
-    return "Hello, there!"
+    global manager
+    return str(manager.max_threads)
 
 
 @application.route('/upload_def_file', methods=["POST"])
@@ -172,7 +181,7 @@ def pull():
         abort(400, "Failed to authenticate user")
 
 
-@application.route('/repo2docker', methods=["POST", "GET"])
+@application.route('/repo2docker', methods=["POST"])
 def repo2docker():
     if 'Authorization' not in request.headers:
         abort(401, 'You must be logged in to perform this function.')
@@ -185,41 +194,32 @@ def repo2docker():
     if "client_id" in intro_obj:
         client_id = str(intro_obj["client_id"])
 
-        if request.method == "POST":
-            build_id = str(uuid.uuid4())
+        build_id = str(uuid.uuid4())
 
-            if request.json is not None and "git_repo" in request.json and "container_name" in request.json:
+        if request.json is not None and "git_repo" in request.json and "container_name" in request.json:
+            put_message({"function_name": "repo2docker_container",
+                         "client_id": client_id, "build_id": build_id, "target": request.json["git_repo"],
+                         "container_name": request.json["container_name"]})
+            manager.start_thread()
+            return build_id
+        elif 'file' in request.files:
+            file = request.files['file']
+            if file.filename == '':
+                abort(400, "No file selected")
+            if file:
+                file_path = tempfile.mkstemp()[1]
+                with open(file_path, "wb") as f:
+                    f.write(file.read())
+
                 put_message({"function_name": "repo2docker_container",
-                             "client_id": client_id, "build_id": build_id, "target": request.json["git_repo"],
-                             "container_name": request.json["container_name"]})
+                             "client_id": client_id, "build_id": build_id, "target": file_path,
+                             "container_name": file.filename})
                 manager.start_thread()
                 return build_id
-            elif 'file' in request.files:
-                file = request.files['file']
-                if file.filename == '':
-                    abort(400, "No file selected")
-                if file:
-                    file_path = tempfile.mkstemp()[1]
-                    with open(file_path, "wb") as f:
-                        f.write(file.read())
-
-                    put_message({"function_name": "repo2docker_container",
-                                 "client_id": client_id, "build_id": build_id, "target": file_path,
-                                 "container_name": file.filename})
-                    manager.start_thread()
-                    return build_id
-                else:
-                    return abort(400, "Failed to upload file")
             else:
-                abort(400, "No git repo or file")
-
-        elif request.method == "GET":
-            build_entry = select_by_column("build", container_owner=client_id,
-                                           build_id=request.json["build_id"])
-            if build_entry is not None and len(build_entry) == 1:
-                return build_entry[0]
-            else:
-                abort(400, "Build ID not valid")
+                return abort(400, "Failed to upload file")
+        else:
+            abort(400, "No git repo or file")
     else:
         abort(400, "Failed to authenticate user")
 

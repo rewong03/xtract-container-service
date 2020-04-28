@@ -122,4 +122,3 @@ These instructions will get the XCS application running on Ubuntu for production
 XCS is a REST API so all interactions can be made with Python's request library. Examples of how to make requests can be found in `app_demo.ipynb`
 (New SDK coming soon)
 
-
