@@ -13,18 +13,18 @@ class XtractConnection:
         self.headers = {'Authorization': f"Bearer {funcx_token}"}
         self.base_url = base_url
 
-    def register_container(self, file_name, file_path):
+    def register_container(self, file_name, file_obj):
         """Registers and stores a Docker or Singularity definition file.
 
         Parameters:
         file_name (str): Name of definition file.
-        file_path (str): Path of file to send.
+        file_obj: File object of definition file.
 
         Returns:
         definition_id (str): ID of the uploaded definition file or an error message.
         """
         url = f"{self.base_url}/upload_def_file"
-        payload = {"file": (file_name, open(file_path, "rb"))}
+        payload = {"file": (file_name, file_obj)}
         response = requests.post(url, files=payload, headers=self.headers)
         definition_id = response.text
 
@@ -97,20 +97,20 @@ class XtractConnection:
 
             return "Success"
 
-    def repo2docker(self, container_name, git_repo=None, file_path=None):
+    def repo2docker(self, container_name, git_repo=None, file_obj=None):
         """Builds a Docker container from a git repository or .tar or .zip file.
 
         Parameters:
         container_name (str): Name of container to build.
         git_repo (str): URL to base git repository to build.
-        file_path (str): Path to .zip or .tar file to build.
+        file_obj: Binary file object of .zip or .tar file to build.
 
         Return:
         (str): build_id of container or an error message.
         """
         url = f"{self.base_url}/repo2docker"
 
-        if git_repo and file_path:
+        if git_repo and file_obj:
             return "Can only upload a git repository OR a file"
         elif git_repo:
             payload = {"container_name": container_name, "git_repo": git_repo}
@@ -118,8 +118,8 @@ class XtractConnection:
             build_id = response.text
 
             return build_id
-        elif file_path:
-            payload = {"file": (container_name, open(file_path, "rb"))}
+        elif file_obj:
+            payload = {"file": (container_name, file_obj)}
             response = requests.post(url, files=payload, headers=self.headers)
             build_id = response.text
 
