@@ -7,20 +7,30 @@ from sqs_queue_utils import get_message
 
 
 class TaskManager:
-    """Manager for threads and various tasks.
+    """Manager for threads and various container building tasks.
 
     Parameters:
     max_threads (int): Maximum number of threads to run.
     idle_time (int): Time to wait before idling a thread.
     kill_time (int): Time to wait before killing a thread.
-    max_retry (int): Max number of retries for a function
+    max_retry (int): Max number of retries for a function.
+
+    Attributes:
+    max_threads (int): Maximum number of threads to run.
+    idle_time (int): Time to wait before idling a thread.
+    kill_time (int): Time to wait before killing a thread.
+    max_retry (int): Max number of retries for a function.
+    total_threads (int): The number of currently running threads.
+    pruning (bool): Whether a pruning job is currently running.
     """
     def __init__(self, max_threads=5, kill_time=180, max_retry=1):
+        print(self)
         self.max_threads = max_threads
         self.kill_time = kill_time
         self.max_retry = max_retry
-        self.thread_status = {}
+        self.thread_status = {"hello": "k"}
         self.total_threads = 0
+        self.pruning = False
 
     def execute_work(self):
         """Pulls down a message from SQS and performs a task. Automatically
@@ -32,9 +42,10 @@ class TaskManager:
         while True:
             if time.time() - start_time >= self.kill_time:
                 break
-            else:
+            elif not self.pruning:
                 task = get_message()
                 if task is not None:
+                    self.thread_status[thread_id] = "WORKING"
                     function_name = task.pop("function_name")
 
                     args = []
@@ -71,16 +82,19 @@ class TaskManager:
         prune_time (int): Amount of time to wait before pruning containers.
         """
         thread_id = f"PRUNE_THREAD_{str(uuid.uuid4())}"
-        self.thread_status[thread_id] = "WORKING"
-        self.total_threads += 1
+        self.thread_status[thread_id] = "IDLE"
         client = docker.from_env()
 
         while True:
-            print('here')
-            self.thread_status[thread_id] = "WORKING"
-            client.images.prune()
-            self.thread_status[thread_id] = "IDLE"
-            time.sleep(prune_time)
+            if any([self.thread_status[thread] == "WORKING" for thread in self.thread_status]):
+                time.sleep(prune_time)
+            else:
+                self.thread_status[thread_id] = "WORKING"
+                self.pruning = True
+                client.images.prune()
+                self.pruning = False
+                self.thread_status[thread_id] = "IDLE"
+                time.sleep(prune_time)
 
     def start_prune_thread(self, prune_time):
         """Starts a daemon thread running the prune_task method.

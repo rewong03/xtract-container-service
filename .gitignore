@@ -11,6 +11,7 @@
 *.sif
 *.ini
 *.pyc
+*.sh
 *.tar
 *.zip
 Dockerfile

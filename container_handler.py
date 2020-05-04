@@ -76,7 +76,7 @@ def push_to_ecr(docker_image, build_id, image_name):
         response = docker_client.images.push(registry, stream=False)
         # TODO Find a better way to check if the image was successfully pushed
         if "sha256" in response:
-            return docker_image.id[7:]
+            return docker_image.id
         else:
             raise ValueError("Failed to push")
     except Exception as e:
@@ -128,7 +128,7 @@ def build_to_docker(definition_entry, image_name):
                                            tag=image_name, rm=True, forcerm=True)
         return image
     except Exception as e:
-        print(f"ERROR {e}")
+        print(f"build_to_docker ERROR {e}")
         return None
     finally:
         if os.path.exists(PROJECT_ROOT + definition_id):
@@ -255,18 +255,14 @@ def build_container(build_entry, to_format, container_name):
             if docker_image:
                 docker_client = docker.from_env()
                 docker_image = docker_image[0]
-                last_built = build_entry["build_time"] if build_entry["build_time"] else None
-                build_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+
                 # for image in docker_client.df()["Images"]:
                 #     if any(list(map(lambda x: container_name in x, image["RepoTags"]))):
                 #         container_size = image["Size"]
                 #         break
                 #     else:
                 #         container_size = None
-                update_table_entry("build", build_id, **{"build_status": "pushing",
-                                                         "build_time": build_time,
-                                                         "last_built": last_built,
-                                                         })
+                update_table_entry("build", build_id, **{"build_status": "success"})
                 logging.info(f"Built {build_id} in {time.time() - t0} seconds")
                 t0 = time.time()
                 logging.info(f"Pushing {build_id}")
@@ -274,11 +270,15 @@ def build_container(build_entry, to_format, container_name):
                                        container_name)
                 logging.info(f"Finished pushing {build_id} in {time.time() - t0}")
                 if response is not None:
-                    update_table_entry("build", build_id, **{"build_status": "success"})
+                    last_built = build_entry["build_time"] if build_entry["build_time"] else None
+                    build_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+                    update_table_entry("build", build_id, **{"build_status": "success",
+                                                             "build_time": build_time,
+                                                             "last_built": last_built})
                     docker_client.images.remove(response, force=True)
                     return build_id
                 else:
-                    docker_client.images.remove(container_name, force=True)
+                    docker_client.images.remove(container_name.id, force=True)
                     raise ValueError("Failed to push")
             else:
                 raise ValueError("Failed to build docker container")
@@ -289,20 +289,19 @@ def build_container(build_entry, to_format, container_name):
             else:
                 raise ValueError("Invalid Singularity container name")
             if singularity_image:
-                build_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
-                last_built = build_entry["build_time"] if build_entry["build_time"] else None
-                image_size = os.path.getsize(PROJECT_ROOT + container_name)
-
-                build_entry["build_status"] = "pushing"
-                update_table_entry("build", build_id, **{"build_status": "pushing",
-                                                         "build_time": build_time,
-                                                         "last_built": last_built,
-                                                         "container_size": image_size})
+                update_table_entry("build", build_id, **{"build_status": "pushing"})
                 s3 = boto3.client("s3")
                 s3.upload_fileobj(open(PROJECT_ROOT + singularity_image, 'rb'),
                                   "xtract-container-service",
                                   f"{build_id}/{os.path.basename(container_name)}")
-                update_table_entry("build", build_id, **{"build_status": "success"})
+                build_time = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+                last_built = build_entry["build_time"] if build_entry["build_time"] else None
+                image_size = os.path.getsize(PROJECT_ROOT + container_name)
+                update_table_entry("build", build_id, **{"build_status": "pushing",
+                                                         "build_time": build_time,
+                                                         "last_built": last_built,
+                                                         "container_size": image_size})
+
                 os.remove(PROJECT_ROOT + container_name)
                 return build_id
             else:
