@@ -2,6 +2,7 @@ import docker
 import threading
 import time
 import uuid
+from typing import *
 from container_handler import build_container, repo2docker_container
 from sqs_queue_utils import get_message
 
@@ -23,37 +24,36 @@ class TaskManager:
     total_threads (int): The number of currently running threads.
     pruning (bool): Whether a pruning job is currently running.
     """
-    def __init__(self, max_threads=5, kill_time=180, max_retry=1):
-        print(self)
-        self.max_threads = max_threads
-        self.kill_time = kill_time
-        self.max_retry = max_retry
-        self.thread_status = {"hello": "k"}
-        self.total_threads = 0
-        self.pruning = False
+    def __init__(self, max_threads: int = 5, kill_time: int = 180, max_retry: int = 1):
+        self.max_threads: int = max_threads
+        self.kill_time: int = kill_time
+        self.max_retry: int = max_retry
+        self.thread_status: Dict[str, str] = {}
+        self.total_threads: int = 0
+        self.pruning: bool = False
 
     def execute_work(self):
         """Pulls down a message from SQS and performs a task. Automatically
         dies when it hasn't performed a task in self.kill_time seconds.
         """
-        thread_id = str(uuid.uuid4())
+        thread_id: str = str(uuid.uuid4())
         self.thread_status[thread_id] = "WORKING"
-        start_time = time.time()
+        start_time: float = time.time()
         while True:
             if time.time() - start_time >= self.kill_time:
                 break
             elif not self.pruning:
-                task = get_message()
+                task: Union[None, Dict[str, Union[int, None, str]]] = get_message()
                 if task is not None:
                     self.thread_status[thread_id] = "WORKING"
-                    function_name = task.pop("function_name")
+                    function_name: str = task.pop("function_name")
 
-                    args = []
+                    args: List[Union[str, Dict[str, Union[int, None, str]]]] = []
                     for arg in task:
                         args.append(task[arg])
 
                     if function_name == "build_container":
-                        attempt_num = 0
+                        attempt_num: int = 0
                         while attempt_num <= self.max_retry:
                             try:
                                 build_container(*args)
@@ -64,7 +64,7 @@ class TaskManager:
                         repo2docker_container(*args)
                     else:
                         break
-                    start_time = time.time()
+                    start_time: float = time.time()
                 else:
                     self.thread_status[thread_id] = "IDLE"
                     continue
@@ -81,7 +81,7 @@ class TaskManager:
         Parameters:
         prune_time (int): Amount of time to wait before pruning containers.
         """
-        thread_id = f"PRUNE_THREAD_{str(uuid.uuid4())}"
+        thread_id: str = f"PRUNE_THREAD_{str(uuid.uuid4())}"
         self.thread_status[thread_id] = "IDLE"
         client = docker.from_env()
 

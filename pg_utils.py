@@ -3,28 +3,30 @@ import logging
 import psycopg2
 import psycopg2.extras
 from configparser import ConfigParser
+from typing import *
 
 
-DEFINITION_TABLE = {"definition_id": "TEXT PRIMARY KEY",
-                    "definition_type": "TEXT", "definition_name": "TEXT",
-                    "pre_containers": "TEXT []", "post_containers": "TEXT []",
-                    "replaces_container": "TEXT []", "location": "TEXT",
-                    "definition_owner": "TEXT"}
+DEFINITION_TABLE: Dict[str, str] = {"definition_id": "TEXT PRIMARY KEY",
+                                    "definition_type": "TEXT", "definition_name": "TEXT",
+                                    "pre_containers": "TEXT []", "post_containers": "TEXT []",
+                                    "replaces_container": "TEXT []", "location": "TEXT",
+                                    "definition_owner": "TEXT"}
 
-BUILD_TABLE = {"build_id": "TEXT PRIMARY KEY",
-               "definition_id": "TEXT REFERENCES definition(definition_id)",
-               "build_time": "TEXT", "build_version": "INT",
-               "last_built": "TEXT", "container_type": "TEXT",
-               "container_size": "INT", "build_status": "TEXT",
-               "container_owner": "TEXT", "build_location": "TEXT",
-               "container_name": "TEXT"}
+BUILD_TABLE: Dict[str, str] = {"build_id": "TEXT PRIMARY KEY",
+                               "definition_id": "TEXT REFERENCES definition(definition_id)",
+                               "build_time": "TEXT", "build_version": "INT",
+                               "last_built": "TEXT", "container_type": "TEXT",
+                               "container_size": "INT", "build_status": "TEXT",
+                               "container_owner": "TEXT", "build_location": "TEXT",
+                               "container_name": "TEXT"}
 
-build_schema = dict(zip(BUILD_TABLE.keys(), [None] * len(BUILD_TABLE)))
-definition_schema = dict(zip(DEFINITION_TABLE.keys(), [None] * len(DEFINITION_TABLE)))
-PROJECT_ROOT = os.path.realpath(os.path.dirname(__file__)) + "/"
+build_schema: Dict[str, Union[int, None, str]] = dict(zip(BUILD_TABLE.keys(), [None] * len(BUILD_TABLE)))
+definition_schema: Dict[str, Union[int, None, str]] = dict(zip(DEFINITION_TABLE.keys(), [None] * len(DEFINITION_TABLE)))
+PROJECT_ROOT: str = os.path.realpath(os.path.dirname(__file__)) + "/"
 
-def config(config_file=os.path.join(PROJECT_ROOT, 'database.ini'),
-           section='postgresql'):
+
+def config(config_file: str = os.path.join(PROJECT_ROOT, 'database.ini'),
+           section: str = 'postgresql') -> Dict[str, str]:
     """Reads PosrgreSQL credentials from a .ini file.
 
     Parameters:
@@ -50,7 +52,7 @@ def config(config_file=os.path.join(PROJECT_ROOT, 'database.ini'),
     return credentials
 
 
-def create_connection(config_file=os.path.join(PROJECT_ROOT, 'database.ini')):
+def create_connection(config_file: str = os.path.join(PROJECT_ROOT, 'database.ini')):
     """Creates a connection object to a PostgreSQL database.
 
     Parameters:
@@ -65,7 +67,7 @@ def create_connection(config_file=os.path.join(PROJECT_ROOT, 'database.ini')):
     return conn
 
 
-def table_exists(table_name):
+def table_exists(table_name: str) -> bool:
     """Checks whether a table exists in the database.
 
     Parameters:
@@ -87,8 +89,8 @@ def prep_database():
     """
     conn = create_connection()
     cur = conn.cursor()
-    definition_table_columns = []
-    build_table_columns = []
+    definition_table_columns: List[str] = []
+    build_table_columns: List[str] = []
 
     for column in DEFINITION_TABLE:
         definition_table_columns.append(column + " " + DEFINITION_TABLE[column])
@@ -96,8 +98,8 @@ def prep_database():
     for column in BUILD_TABLE:
         build_table_columns.append(column + " " + BUILD_TABLE[column])
 
-    definition_command = f"""CREATE TABLE definition ({", ".join(definition_table_columns)})"""
-    build_command = f"""CREATE TABLE build ({", ".join(build_table_columns)})"""
+    definition_command: str = f"""CREATE TABLE definition ({", ".join(definition_table_columns)})"""
+    build_command: str = f"""CREATE TABLE build ({", ".join(build_table_columns)})"""
 
     cur.execute(definition_command)
     cur.execute(build_command)
@@ -108,7 +110,7 @@ def prep_database():
     logging.info("Succesfully created tables")
 
 
-def create_table_entry(table_name, **columns):
+def create_table_entry(table_name: str, **columns: Union[int, str]):
     """Creates a new entry in a table.
 
     Parameters:
@@ -118,19 +120,19 @@ def create_table_entry(table_name, **columns):
     of the column to write to. E.g. id="1234a". If no value
     for a column is passed then None is defaulted.
     """
-    assert table_name in ["definition", "build"], "Not a valid table"
-
     conn = create_connection()
-    entry = []
+    entry: List[Union[str, int, None]] = []
 
     if table_name == "definition":
-        table = DEFINITION_TABLE
+        table: Dict[str, str] = DEFINITION_TABLE
     elif table_name == "build":
-        table = BUILD_TABLE
+        table: Dict[str, str] = BUILD_TABLE
+    else:
+        raise ValueError(f"{table_name} not a valid table")
 
     assert set(list(columns.keys())) <= set(table), "Column does not exist in table"
 
-    statement = f"""INSERT INTO {table_name} VALUES {"(" + ", ".join(["%s"] * len(table)) + ")"}"""
+    statement: str = f"""INSERT INTO {table_name} VALUES {"(" + ", ".join(["%s"] * len(table)) + ")"}"""
 
     for column in table:
         if column in columns:
@@ -138,7 +140,7 @@ def create_table_entry(table_name, **columns):
         else:
             entry.append(None)
 
-    entry = tuple(entry)
+    entry: Tuple[Union[str, int, None]] = tuple(entry)
 
     cur = conn.cursor()
     cur.execute(statement, entry)
@@ -146,7 +148,7 @@ def create_table_entry(table_name, **columns):
     logging.info(f"Successfully created entry to {table_name} table")
 
 
-def update_table_entry(table_name, id, **columns):
+def update_table_entry(table_name: str, id: str, **columns: Union[int, str]):
     """Updates an existing table.
 
     Parameters:
@@ -156,24 +158,24 @@ def update_table_entry(table_name, id, **columns):
     **columns (str): The value to write passed with the name
     of the column to write to. E.g. recipe="1234a".
     """
-    assert table_name in ["definition", "build"], "Not a valid table"
-
-    values = list(columns.values())
-    columns = list(columns.keys())
-
     if table_name == "definition":
-        table = DEFINITION_TABLE
+        table: Dict[str, str] = DEFINITION_TABLE
     elif table_name == "build":
-        table = BUILD_TABLE
+        table: Dict[str, str] = BUILD_TABLE
+    else:
+        raise ValueError(f"{table_name} not a valid table")
+
+    values: List[Union[str, int]] = list(columns.values())
+    columns: List[str] = list(columns.keys())
 
     assert set(columns) <= set(table), "Column does not exist in table"
 
-    columns = " = %s,".join(columns) + " = %s"
+    columns: str = " = %s,".join(columns) + " = %s"
     values.append(id)
 
-    statement = f"""UPDATE {table_name}
-                SET {columns}
-                WHERE {table_name}_id = %s"""
+    statement: str = f"""UPDATE {table_name}
+                      SET {columns}
+                      WHERE {table_name}_id = %s"""
     conn = create_connection()
     cur = conn.cursor()
     cur.execute(statement, tuple(values))
@@ -181,7 +183,7 @@ def update_table_entry(table_name, id, **columns):
     logging.info(f"Successfully inserted {values[:-1]} into entry with id {id}.")
 
 
-def select_all_rows(table_name):
+def select_all_rows(table_name: str) -> List[Dict[str, Union[int, None, str]]]:
     """Returns all rows from containers table.
 
     Parameters:
@@ -192,14 +194,14 @@ def select_all_rows(table_name):
     rows (list (dict)): List of dictionaries containing the
     columns and their values
     """
-    assert table_name in ["definition", "build"], "Not a valid table"
-
     if table_name == "definition":
-        table = DEFINITION_TABLE
+        table: Dict[str, str] = DEFINITION_TABLE
     elif table_name == "build":
-        table = BUILD_TABLE
+        table: Dict[str, str] = BUILD_TABLE
+    else:
+        raise ValueError(f"{table_name} not a valid table")
 
-    rows = []
+    rows: List[Dict[str, Union[int, None, str]]] = []
 
     conn = create_connection()
     cur = conn.cursor()
@@ -213,7 +215,7 @@ def select_all_rows(table_name):
     return rows
 
 
-def search_array(table_name, array, value):
+def search_array(table_name: str, array: str, value: Union[int, str]) -> List[Dict[str, Union[int, None, str]]]:
     """Searches arrays for a value.
 
     Parameters:
@@ -225,16 +227,16 @@ def search_array(table_name, array, value):
     Returns:
     rows (list(dict)): List of rows that match the values.
     """
-    assert table_name in ["definition", "build"], "Not a valid table"
-
     if table_name == "definition":
-        table = DEFINITION_TABLE
+        table: Dict[str] = DEFINITION_TABLE
     elif table_name == "build":
-        table = BUILD_TABLE
+        table: Dict[str] = BUILD_TABLE
+    else:
+        raise ValueError(f"{table_name} not a valid table")
 
     assert array in table, "Array does not exist"
 
-    rows = []
+    rows: List[Dict[str, Union[int, None, str]]] = []
 
     conn = create_connection()
     cur = conn.cursor()
@@ -250,7 +252,8 @@ def search_array(table_name, array, value):
     return rows
 
 
-def select_by_column(table_name, **columns):
+def select_by_column(table_name: str,
+                     **columns: Union[int, str]) -> List[Dict[str, Union[int, None, str]]]:
     """Searches table by values for columns.
 
     Parameters:
@@ -262,15 +265,15 @@ def select_by_column(table_name, **columns):
     Returns:
     rows (list(dict)): List of rows that match the values.
     """
-    assert table_name in ["definition", "build"], "Not a valid table"
-
     if table_name == "definition":
-        table = DEFINITION_TABLE
+        table: Dict[str, str] = DEFINITION_TABLE
     elif table_name == "build":
-        table = BUILD_TABLE
+        table: Dict[str, str] = BUILD_TABLE
+    else:
+        raise ValueError(f"{table_name} not a valid table")
 
-    values = list(columns.values())
-    columns = list(columns.keys())
+    values: List[Union[str, int]] = list(columns.values())
+    columns: List[str] = list(columns.keys())
 
     assert set(columns) <= set(table), "Column does not exist in table"
     assert len(values) == len(columns), "Not enough values to fill columns with"

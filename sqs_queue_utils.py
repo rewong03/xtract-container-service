@@ -1,8 +1,9 @@
 import json
 import boto3
+from typing import *
 
 
-def get_message(queue_name="xtract-container-service"):
+def get_message(queue_name: str = "xtract-container-service") -> Union[None, Dict[str, Union[int, None, str]]]:
     """Receives a message from an SQS queue.
 
     Parameters:
@@ -17,7 +18,7 @@ def get_message(queue_name="xtract-container-service"):
 
     if len(response) == 1:
         response = response[0]
-        message = json.loads(response.body)
+        message: Dict[str, Union[int, None, str]] = json.loads(response.body)
         response.delete()
 
         return message
@@ -25,7 +26,7 @@ def get_message(queue_name="xtract-container-service"):
         return None
 
 
-def put_message(message, queue_name="xtract-container-service"):
+def put_message(message: Dict[str, Union[int, None, str]], queue_name: str = "xtract-container-service"):
     """Places a message on an SQS queue.
 
     Parameters:
@@ -35,7 +36,7 @@ def put_message(message, queue_name="xtract-container-service"):
     Returns:
     response (dict): Response from SQS
     """
-    message = json.dumps(message)
+    message: str = json.dumps(message)
     sqs = boto3.resource('sqs')
     queue = sqs.get_queue_by_name(QueueName=queue_name)
     response = queue.send_message(MessageBody=message)
