@@ -11,35 +11,35 @@ from sqs_queue_utils import put_message
 from task_manager import TaskManager
 
 
-application = Flask(__name__)
+app = Flask(__name__)
 manager = TaskManager(max_threads=11, kill_time=10)
 #manager.start_prune_thread(10)
 
 
-@application.route("/change_thread", methods=["POST"])
+@app.route("/change_thread", methods=["POST"])
 def change_thread():
     global manager
     manager = TaskManager(max_threads=request.json["threads"])
     return "k"
 
 
-@application.before_first_request
+@app.before_first_request
 def config():
     if not(table_exists("definition") and table_exists('build')):
         prep_database()
 
 
-@application.route('/thread')
+@app.route('/thread')
 def thread():
     return json.dumps(manager.thread_status)
 
 
-@application.route('/')
+@app.route('/')
 def index():
     return "working"
 
 
-@application.route('/upload_def_file', methods=["POST"])
+@app.route('/upload_def_file', methods=["POST"])
 def upload_file():
     if 'Authorization' not in request.headers:
         abort(401, 'You must be logged in to perform this function.')
@@ -77,7 +77,7 @@ def upload_file():
         abort(400, "Failed to authenticate user")
 
 
-@application.route('/build', methods=["POST", "GET"])
+@app.route('/build', methods=["POST", "GET"])
 def build():
     if 'Authorization' not in request.headers:
         abort(401, "You must be logged in to perform this function.")
@@ -138,7 +138,7 @@ def build():
         abort(400, "Failed to authenticate user")
 
 
-@application.route('/pull', methods=["GET"])
+@app.route('/pull', methods=["GET"])
 def pull():
     if 'Authorization' not in request.headers:
         abort(401, 'You must be logged in to perform this function.')
@@ -180,7 +180,7 @@ def pull():
         abort(400, "Failed to authenticate user")
 
 
-@application.route('/repo2docker', methods=["POST"])
+@app.route('/repo2docker', methods=["POST"])
 def repo2docker():
     if 'Authorization' not in request.headers:
         abort(401, 'You must be logged in to perform this function.')
@@ -223,7 +223,7 @@ def repo2docker():
         abort(400, "Failed to authenticate user")
 
 
-@application.route('/convert', methods=["POST"])
+@app.route('/convert', methods=["POST"])
 def convert():
     if 'Authorization' not in request.headers:
         abort(401, 'You must be logged in to perform this function.')
@@ -250,5 +250,5 @@ def convert():
 
 
 if __name__ == "__main__":
-    application.run(port=80)
+    app.run(port=80)
 
