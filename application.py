@@ -13,7 +13,7 @@ from task_manager import TaskManager
 
 application = Flask(__name__)
 manager = TaskManager(max_threads=11, kill_time=10)
-manager.start_prune_thread(10)
+#manager.start_prune_thread(10)
 
 
 @application.route("/change_thread", methods=["POST"])
@@ -36,8 +36,7 @@ def thread():
 
 @application.route('/')
 def index():
-    global manager
-    return str(manager.max_threads)
+    return "working"
 
 
 @application.route('/upload_def_file', methods=["POST"])
@@ -251,5 +250,5 @@ def convert():
 
 
 if __name__ == "__main__":
-    application.run(debug=False, threaded=True)
+    application.run(port=80)
 
