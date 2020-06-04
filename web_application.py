@@ -13,7 +13,6 @@ from task_manager import TaskManager
 
 app = Flask(__name__)
 manager = TaskManager(max_threads=11, kill_time=10)
-#manager.start_prune_thread(10)
 
 
 @app.route("/change_thread", methods=["POST"])
@@ -250,5 +249,5 @@ def convert():
 
 
 if __name__ == "__main__":
-    app.run(port=80)
+    app.run(port=5000)
 

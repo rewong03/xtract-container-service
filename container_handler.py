@@ -41,10 +41,10 @@ def ecr_login() -> str:
     registry (str): Name of the ECR registry logged into.
     """
     ecr_client = boto3.client('ecr')
-    token: Dict = ecr_client.get_authorization_token()
-    registry: str = token['authorizationData'][0]['proxyEndpoint']
+    token = ecr_client.get_authorization_token()
+    registry = token['authorizationData'][0]['proxyEndpoint']
     subprocess.call(
-        f"aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin {registry}",
+        f"/usr/local/binaws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin {registry}",
         shell=True)
 
     return registry
@@ -79,6 +79,7 @@ def push_to_ecr(docker_image, build_id: str, image_name: str) -> str:
         if "sha256" in response:
             return docker_image.id
         else:
+            print(response)
             raise ValueError("Failed to push")
     except Exception as e:
         docker_client.images.remove(docker_image.id, force=True)
