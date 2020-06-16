@@ -26,7 +26,8 @@ def get_message(queue_name: str = "xtract-container-service") -> Union[None, Dic
         return None
 
 
-def put_message(message: Dict[str, Union[int, None, str]], queue_name: str = "xtract-container-service"):
+def put_message(message: Dict[str, Union[int, None, str]],
+                queue_url: str = "https://sqs.us-west-2.amazonaws.com/576668000072/awseb-e-dp77uspvna-stack-AWSEBWorkerQueue-1700Q2471JLKN"):
     """Places a message on an SQS queue.
 
     Parameters:
@@ -37,8 +38,7 @@ def put_message(message: Dict[str, Union[int, None, str]], queue_name: str = "xt
     response (dict): Response from SQS
     """
     message: str = json.dumps(message)
-    sqs = boto3.resource('sqs')
-    queue = sqs.get_queue_by_name(QueueName=queue_name)
-    response = queue.send_message(MessageBody=message)
+    sqs = boto3.client('sqs')
+    response = sqs.send_message(QueueUrl=queue_url, MessageBody=message)
 
     return response

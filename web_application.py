@@ -12,7 +12,6 @@ from task_manager import TaskManager
 
 
 app = Flask(__name__)
-manager = TaskManager(max_threads=11, kill_time=10)
 
 
 @app.route("/change_thread", methods=["POST"])
@@ -120,7 +119,6 @@ def build():
                                      "build_entry": build_entry,
                                      "to_format": params["to_format"],
                                      "container_name": params["container_name"]})
-                        manager.start_thread()
                         return build_id
                 else:
                     abort(400, f"""No definition DB entry for {params["definition_id"]}""")
@@ -212,7 +210,6 @@ def repo2docker():
                 put_message({"function_name": "repo2docker_container",
                              "client_id": client_id, "build_id": build_id, "target": file_path,
                              "container_name": file.filename})
-                manager.start_thread()
                 return build_id
             else:
                 return abort(400, "Failed to upload file")

@@ -302,7 +302,7 @@ def build_container(build_entry: Dict[str, Union[int, None, str]],
                 build_time: str = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
                 last_built: str = build_entry["build_time"] if build_entry["build_time"] else None
                 image_size: int = os.path.getsize(PROJECT_ROOT + container_name)
-                update_table_entry("build", build_id, **{"build_status": "pushing",
+                update_table_entry("build", build_id, **{"build_status": "success",
                                                          "build_time": build_time,
                                                          "last_built": last_built,
                                                          "container_size": image_size})
